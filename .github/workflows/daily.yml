@@ -1,0 +1,62 @@
+name: GoldPulse analysis
+
+on:
+  schedule:
+    # 07:00 UTC on weekdays, after the London open.
+    - cron: "0 7 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Comma-separated pairs (blank = default watchlist)"
+        required: false
+        default: ""
+
+jobs:
+  analyse:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+
+      - name: Test
+        run: python -m pytest -q
+
+      - name: Run analysis
+        env:
+          # All optional. Add them as repository secrets to enable each feature;
+          # missing secrets simply disable that capability.
+          # AI commentary is opt-in (--ai / Telegram button); this scheduled run
+          # intentionally does NOT pass --ai, so no LLM call happens here.
+          FOREX_SYMBOLS: ${{ github.event.inputs.symbols }}
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          TWELVEDATA_API_KEY2: ${{ secrets.TWELVEDATA_API_KEY2 }}
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          AI_PROVIDER_ORDER: groq,gemini,deepseek
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python main.py
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forex-report
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 30

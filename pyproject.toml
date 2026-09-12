@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wg-goldpulse"
+version = "0.3.0"
+description = "Analysis-only XAUUSD signal research, validation, Telegram reporting, and backtesting"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = [
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "requests>=2.28.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+# Keyless default data source.
+yahoo = ["yfinance>=0.2.0"]
+dev = ["pytest>=7.0.0", "yfinance>=0.2.0"]
+desktop = [
+    "PySide6>=6.5.0",
+    "pyqtgraph>=0.13.0",
+]
+
+[project.scripts]
+daily-forex-analysis = "main:main"
+wg-goldpulse = "main:main"
+wg-goldpulse-signal = "signal_main:main"
+wg-goldpulse-backtest = "backtest_main:main"
+wg-goldpulse-telegram = "telegram_bot_main:main"
+wg-goldpulse-usage = "usage_main:main"
+forex-desktop = "desktop.app:main"
+
+[tool.setuptools]
+packages = ["forex", "desktop"]
+py-modules = ["main", "signal_main", "backtest_main", "telegram_bot_main", "usage_main"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "network: hits a live API; deselect with -m 'not network'",
+]
