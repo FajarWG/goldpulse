@@ -12,8 +12,8 @@ Sistem berfokus pada strategi momentum candle murni tanpa ketergantungan indikat
 
 | Versi | Tipe | Deskripsi & Filter Kunci | Reward:Risk |
 | :--- | :--- | :--- | :--- |
-| **`momentum_v1`** | Standar (Default) | Aksi harga candle M5, body-to-range ratio, alignment EMA 12/26, skor momentum $\ge 80$. **Terbukti performa terbaik (+28.0R, Win Rate 54%)**. | **1.0R** |
-| **`momentum_v3`** | Two Candles Hybrid | Multi-timeframe price action: **M30 Roadmap** (Pola 2 Candle: C1 impulsif + C2 lanjutan searah) + **M5 Retracement Entry** ke zona 50% equilibrium, dengan **SL presisi swing M5**. | **1.5R** |
+| **`momentum_v1`** | Standar (Default) | Aksi harga candle M5, body-to-range ratio, alignment EMA 12/26, skor momentum $\ge 80$. **Terbukti konsisten (+26.0R, Win Rate 53.7%)**. | **1.0R** |
+| **`momentum_v3`** | Two Candles Hybrid | Multi-timeframe price action: **M30 Roadmap** (Pola 2 Candle: C1 impulsif + C2 lanjutan searah) + **M5 Retracement Entry** ke zona 50% equilibrium, dengan **SL presisi swing M5**. **(+27.0R, PF 1.34)**. | **2.0R** |
 
 Keduanya dapat dipilih dan diganti secara instan kapan saja langsung melalui Telegram tanpa perlu me-restart daemon service.
 
@@ -34,7 +34,7 @@ Keduanya dapat dipilih dan diganti secara instan kapan saja langsung melalui Tel
 
 3. **Forward Test Otomatis (Dynamic R):**
    - Setiap sinyal dicatat dan dievaluasi candle-by-candle secara real-time.
-   - Target TP tersentuh lebih dulu: Menang sesuai reward rasio sebenarnya (`+1.0R` atau `+1.5R`).
+   - Target TP tersentuh lebih dulu: Menang sesuai reward rasio sebenarnya (`+1.0R` atau `+2.0R`).
    - Stop Loss tersentuh lebih dulu: Kalah (`-1.0R`).
    - TP & SL tersentuh pada candle M5 yang sama: Dihitung kalah secara konservatif.
    - Statistik mencakup Win Rate, Total R, status aktif, dan rincian per versi (`/stats`).

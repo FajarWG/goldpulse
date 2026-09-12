@@ -68,7 +68,7 @@ def main() -> int:
     max_active = int(os.getenv("SIGNAL_MAX_ACTIVE_MOMENTUM", "3"))
 
     for version in target_versions:
-        default_rr = 1.0 if version == "momentum_v1" else 1.5
+        default_rr = 1.0 if version == "momentum_v1" else 2.0
         rr = args.momentum_rr if args.momentum_rr is not None else default_rr
         summary, trades = run_momentum_backtest(
             frames,

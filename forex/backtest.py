@@ -216,7 +216,7 @@ def run_momentum_backtest(
     session_filter: bool = True,
 ) -> Tuple[BacktestSummary, List[BacktestTrade]]:
     """Backtest momentum strategies (momentum_v1 or momentum_v3)."""
-    default_rr = 1.0 if strategy_version == "momentum_v1" else 1.5
+    default_rr = 1.0 if strategy_version == "momentum_v1" else 2.0
     eff_rr = reward_r if reward_r is not None else default_rr
     m5 = frames["M5"].copy().sort_index()
     now = pd.Timestamp.now(tz="UTC")

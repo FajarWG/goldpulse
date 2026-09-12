@@ -3,7 +3,7 @@
 Supports two versions:
   - momentum_v1: Baseline candle-action momentum strategy (M5/M15, EMA 12/26, 1.0R).
   - momentum_v3: Multi-timeframe 2-candle hybrid momentum strategy (M30 roadmap + M5
-                 swing retracement entry, 1.5R).
+                 swing retracement entry, 2.0R).
 
 No broker, account, position sizing, or order execution code belongs here.
 """
@@ -312,7 +312,7 @@ def momentum_candle_v3(
     m5: pd.DataFrame,
     m30: Optional[pd.DataFrame] = None,
     score_threshold: int = 75,
-    reward_r: float = 1.5,
+    reward_r: float = 2.0,
     session_filter: bool = True,
     retrace_min_pct: float = 0.50,
     max_opposing_wick_ratio: float = 0.35,
@@ -328,12 +328,12 @@ def momentum_candle_v3(
          - Sets HTF bias (LONG or SHORT) and defines the equilibrium (50% pivot) of Candle 2.
       2. LTF Execution (M5):
          - Waits for M5 price to retrace into the discount (for LONG) or premium (for SHORT)
-           area of the M30 setup candle (at or beyond 50% equilibrium).
+         - area of the M30 setup candle (at or beyond 50% equilibrium).
          - Triggers entry on M5 reversal confirmation candle.
       3. Precision Risk Management (Hybrid):
          - Stop Loss placed tightly at the M5 retracement swing low/high (+ ATR buffer),
            avoiding overly wide M30 stops.
-         - Realistic 1.5R default reward target to capture swift momentum moves in Gold.
+         - Robust 2.0R default reward target yielding optimal risk-adjusted return in Gold.
       4. Session Filter:
          - Focus on London & New York high-liquidity sessions (07:00-17:00 UTC).
     """
@@ -560,7 +560,7 @@ def evaluate_momentum(
 ) -> MomentumReading:
     """Evaluate momentum with the specified version (momentum_v1 or momentum_v3)."""
     if strategy_version == "momentum_v3":
-        r = reward_r if reward_r is not None else 1.5
+        r = reward_r if reward_r is not None else 2.0
         return momentum_candle_v3(
             m5,
             m30=m30,

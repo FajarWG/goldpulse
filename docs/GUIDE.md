@@ -41,13 +41,13 @@ Urutan `:00` lalu `:02` memastikan analisis besar diperbarui sebelum pemeriksaan
 
 ### 2. Strategi Momentum Candle
 
-- **`momentum_v1` (Standar - Default):** Candle action M5, perbandingan body vs range, alignment EMA 12/26, skor momentum >= 80, target reward 1.0R. Terbukti paling stabil dan profitable (+28.0R, 54.0% win rate pada pengujian 90 hari).
-- **`momentum_v3` (Two Candles Hybrid):** Roadmap 2 Candle M30 (C1 impulsif + C2 lanjutan searah) + M5 retracement ke zona 50% equilibrium, disempurnakan dengan Stop Loss presisi berbasis swing low/high M5 dan target reward 1.5R.
+- **`momentum_v1` (Standar - Default):** Candle action M5, perbandingan body vs range, alignment EMA 12/26, skor momentum >= 80, target reward 1.0R. Terbukti paling stabil dan konsisten (+26.0R, 53.7% win rate pada pengujian 90 hari).
+- **`momentum_v3` (Two Candles Hybrid):** Roadmap 2 Candle M30 (C1 impulsif + C2 lanjutan searah) + M5 retracement ke zona 50% equilibrium, disempurnakan dengan Stop Loss presisi berbasis swing low/high M5 dan target reward 2.0R (+27.0R, PF 1.34).
 
 ### 3. Forward validation otomatis
 
 - Semua signal READY disimpan dan dinilai otomatis.
-- TP lebih dulu: menang sesuai reward rasio sebenarnya (`+1.0R` atau `+1.5R`).
+- TP lebih dulu: menang sesuai reward rasio sebenarnya (`+1.0R` atau `+2.0R`).
 - SL lebih dulu: kalah `-1.0R`.
 - TP dan SL pada candle M5 yang sama: dihitung kalah secara konservatif.
 - Tidak selesai dalam empat jam: kedaluwarsa dan tidak masuk pembagi win rate.
@@ -87,7 +87,7 @@ Referensi konfigurasi resmi: [Groq OpenAI compatibility](https://console.groq.co
 Backtest menyimpan versi strategi secara terpisah agar perbandingan performa terukur secara objektif. Sistem membandingkan kedua strategi momentum:
 
 - **`momentum_v1` (Standar - Default):** Candle action M5 murni, alignment EMA 12/26, reward 1.0R.
-- **`momentum_v3` (Two Candles Hybrid):** Pola 2 candle M30 + retracement M5 50%, Stop Loss swing M5, reward 1.5R.
+- **`momentum_v3` (Two Candles Hybrid):** Pola 2 candle M30 + retracement M5 50%, Stop Loss swing M5, reward 2.0R.
 
 Data yang diambil dan disimpan lokal:
 

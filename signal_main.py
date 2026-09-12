@@ -152,7 +152,7 @@ def main() -> int:
     strategy_events = []
 
     for strat in target_strategies:
-        default_rr = 1.0 if strat == "momentum_v1" else 1.5
+        default_rr = 1.0 if strat == "momentum_v1" else 2.0
         momentum_reward_r = float(os.getenv("SIGNAL_MOMENTUM_REWARD_R", str(default_rr)))
         reading = evaluate_momentum(
             m5,

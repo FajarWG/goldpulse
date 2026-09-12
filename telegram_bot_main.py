@@ -87,8 +87,8 @@ def _mode_text(tracker: SignalTracker) -> str:
         "",
         "Pilihan Versi:",
         "• all (Multi)     : Kedua strategi aktif bersamaan secara paralel",
-        "• v1 (Standar)    : M5 candle action, EMA 12/26, 1.0R (Terbukti +28.0R)",
-        "• v3 (Two Candles): M30 2-candle bias, M5 swing retracement entry, 1.5R",
+        "• v1 (Standar)    : M5 candle action, EMA 12/26, 1.0R (Terbukti +26.0R)",
+        "• v3 (Two Candles): M30 2-candle bias, M5 swing entry, 2.0R (Terbukti +27.0R)",
         "━━━━━━━━━━━━━━━━━━━━",
         "Tekan tombol di bawah untuk mengubah pengaturan:",
     ])

@@ -65,7 +65,7 @@ def test_evaluate_momentum_dispatcher():
 
     r3 = evaluate_momentum(m5, m15, strategy_version="momentum_v3")
     assert r3.strategy_version == "momentum_v3"
-    assert r3.risk_reward == 1.5
+    assert r3.risk_reward == 2.0
 
 
 def test_momentum_telegram_text_formatting():
@@ -104,7 +104,7 @@ def test_momentum_v3_bullish_and_bearish():
     reading = momentum_candle_v3(m5_df, m30=m30_df, session_filter=True)
     assert reading.action == "LONG"
     assert reading.strategy_version == "momentum_v3"
-    assert reading.risk_reward == 1.5
+    assert reading.risk_reward == 2.0
     assert reading.stop_loss < reading.entry < reading.take_profit
 
 
@@ -133,7 +133,7 @@ def test_momentum_v3_bearish():
     reading = momentum_candle_v3(m5_df, m30=m30_df, session_filter=True)
     assert reading.action == "SHORT"
     assert reading.strategy_version == "momentum_v3"
-    assert reading.risk_reward == 1.5
+    assert reading.risk_reward == 2.0
     assert reading.take_profit < reading.entry < reading.stop_loss
 
 
@@ -168,7 +168,7 @@ def test_evaluate_momentum_v3_and_formatting():
     m15 = resample(m5, "15min")
     r3 = evaluate_momentum(m5, m15, strategy_version="momentum_v3")
     assert r3.strategy_version == "momentum_v3"
-    assert r3.risk_reward == 1.5
+    assert r3.risk_reward == 2.0
 
     text = _momentum_text(r3)
     assert "Momentum MTF 2-Candle (v3)" in text
