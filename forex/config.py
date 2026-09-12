@@ -205,8 +205,17 @@ class Config:
 
     @classmethod
     def from_env(cls, dotenv_path: Optional[str] = ".env") -> "Config":
-        if dotenv_path:
+        if dotenv_path and os.path.exists(dotenv_path):
             load_dotenv(dotenv_path)
+
+        # Fallback to system env file if available and key not yet set
+        if not os.getenv("TWELVEDATA_API_KEY"):
+            system_env = os.getenv("FOREX_ENV_FILE", "/etc/xauusd-analysis.env")
+            if os.path.exists(system_env):
+                try:
+                    load_dotenv(system_env)
+                except (PermissionError, OSError):
+                    pass
 
         raw_symbols = _env("FOREX_SYMBOLS")
         symbols = [s.strip() for s in raw_symbols.split(",") if s.strip()] if raw_symbols else []
