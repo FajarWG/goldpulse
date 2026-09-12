@@ -12,11 +12,10 @@ Sistem berfokus pada strategi momentum candle murni tanpa ketergantungan indikat
 
 | Versi | Tipe | Deskripsi & Filter Kunci | Reward:Risk |
 | :--- | :--- | :--- | :--- |
-| **`momentum_v1`** | Standar | Aksi harga candle M5, body-to-range ratio, alignment EMA 12/26, skor momentum $\ge 80$. | **1.0R** |
-| **`momentum_v3`** | Two Candles MTF | Multi-timeframe price action: **M30 Roadmap** (Pola 2 Candle: C1 impulsif + C2 lanjutan searah) + **M5 Entry Retracement** ke zona 50% equilibrium candle kedua M30, SL di High/Low M30. | **2.0R** |
-| **`momentum_v3_improved`** | Pro (Optimized) | MTF 2-Candle Pro berbasis temuan empiris backtest: **M30 Macro Trend Confluence** (EMA 50 M30), **Volatility Regime Gate** (filter `high_vol`), **NY Open Spike Filter** (skip 14:00 UTC), dan **Anti-Deep Retracement** (batal jika tembus C1). | **2.0R** |
+| **`momentum_v1`** | Standar (Default) | Aksi harga candle M5, body-to-range ratio, alignment EMA 12/26, skor momentum $\ge 80$. **Terbukti performa terbaik (+28.0R, Win Rate 54%)**. | **1.0R** |
+| **`momentum_v3`** | Two Candles Hybrid | Multi-timeframe price action: **M30 Roadmap** (Pola 2 Candle: C1 impulsif + C2 lanjutan searah) + **M5 Retracement Entry** ke zona 50% equilibrium, dengan **SL presisi swing M5**. | **1.5R** |
 
-Ketiganya dapat dipilih dan diganti secara instan kapan saja langsung melalui Telegram tanpa perlu me-restart daemon service.
+Keduanya dapat dipilih dan diganti secara instan kapan saja langsung melalui Telegram tanpa perlu me-restart daemon service.
 
 ---
 
@@ -29,13 +28,13 @@ Ketiganya dapat dipilih dan diganti secara instan kapan saja langsung melalui Te
 
 2. **Kontrol Interaktif Telegram (`/mode`):**
    - **Toggle On/Off:** Menyalakan atau mematikan pengiriman notifikasi sinyal secara live (`/mode on` atau `/mode off`).
-   - **Ganti Strategi:** Berpindah antara `momentum_v1`, `momentum_v3`, `momentum_v3_improved`, atau mode `all` (semua aktif bersamaan) secara instan (`/mode v1`, `/mode v3`, `/mode pro`, atau `/mode all`).
+   - **Ganti Strategi:** Berpindah antara `momentum_v1`, `momentum_v3`, atau mode `all` (keduanya aktif bersamaan) secara instan (`/mode v1`, `/mode v3`, atau `/mode all`).
    - **Inline Keyboard:** Tombol interaktif langsung di Telegram untuk kemudahan kontrol pengguna.
    - Perubahan disimpan di SQLite (`telegram_state`) dan langsung diterapkan pada evaluasi 5-menitan berikutnya.
 
 3. **Forward Test Otomatis (Dynamic R):**
    - Setiap sinyal dicatat dan dievaluasi candle-by-candle secara real-time.
-   - Target TP tersentuh lebih dulu: Menang sesuai reward rasio sebenarnya (`+1.0R` atau `+2.0R`).
+   - Target TP tersentuh lebih dulu: Menang sesuai reward rasio sebenarnya (`+1.0R` atau `+1.5R`).
    - Stop Loss tersentuh lebih dulu: Kalah (`-1.0R`).
    - TP & SL tersentuh pada candle M5 yang sama: Dihitung kalah secara konservatif.
    - Statistik mencakup Win Rate, Total R, status aktif, dan rincian per versi (`/stats`).
@@ -43,7 +42,7 @@ Ketiganya dapat dipilih dan diganti secara instan kapan saja langsung melalui Te
 4. **Historical Backtest Engine Komparatif:**
    - Replay data historis 90 hari dengan incremental cache Twelve Data.
    - Perhitungan Monte Carlo randomisation p-value, profit factor, win rate, dan maximum drawdown.
-   - Perbandingan performa `momentum_v1`, `momentum_v3`, dan `momentum_v3_improved` via CLI atau bot Telegram (`/backtest`).
+   - Perbandingan performa `momentum_v1` vs `momentum_v3` via CLI atau bot Telegram (`/backtest`).
 
 5. **Analisis Pasar Multi-Timeframe (H1, H4, D1):**
    - Pemetaan tren besar berkala setiap jam.
@@ -88,8 +87,8 @@ TELEGRAM_CHAT_ID=your_chat_id
 
 # Mode & Strategi Awal
 SIGNAL_ENABLED=on
-SIGNAL_STRATEGY=momentum_v3_improved
-SIGNAL_MOMENTUM_REWARD_R=2.0
+SIGNAL_STRATEGY=momentum_v1
+SIGNAL_MOMENTUM_REWARD_R=1.0
 
 # AI Opsional
 GROQ_API_KEY=
@@ -109,7 +108,7 @@ python signal_main.py
 # 3. Jalankan bot Telegram interaktif (listener)
 python telegram_bot_main.py
 
-# 4. Replay backtest data historis (komparasi v1, v3, dan v3_improved)
+# 4. Replay backtest data historis (komparasi v1 dan v3)
 python backtest_main.py --strategy all
 ```
 
@@ -121,7 +120,7 @@ python backtest_main.py --strategy all
 | :--- | :--- |
 | `/mode` | Menampilkan panel kontrol mode & status strategi aktif dengan tombol inline. |
 | `/mode on` / `/mode off` | Menyalakan atau menonaktifkan pengiriman sinyal momentum. |
-| `/mode v1` / `/mode v2` / `/mode v3` / `/mode all` | Mengganti strategi aktif ke `v1`, `v2`, `v3`, atau `all` (semua strategi aktif bersamaan). |
+| `/mode v1` / `/mode v3` / `/mode all` | Mengganti strategi aktif ke `v1`, `v3`, atau `all` (menjalankan v1 dan v3 bersamaan). |
 | `/stats` | Melihat statistik performa forward test real beserta breakdown per versi. |
 | `/backtest` | Melihat laporan ringkasan komparasi historical backtest terbaru. |
 | `/ai` | Meminta analisis kondisi teknikal pasar saat ini menggunakan AI. |
@@ -173,7 +172,7 @@ Project dilengkapi dengan automated test suite offline deterministik tanpa keter
 .venv/bin/pytest -v
 ```
 
-Semua pengujian mencakup verifikasi matematis indikator teknikal, deteksi momentum candle v1 & v2, dynamic R tracking, format notifikasi Telegram, dan kalkulasi Monte Carlo p-value.
+Semua pengujian mencakup verifikasi matematis indikator teknikal, deteksi momentum candle v1 & v3, dynamic R tracking, format notifikasi Telegram, dan kalkulasi Monte Carlo p-value.
 
 ---
 
@@ -182,7 +181,7 @@ Semua pengujian mencakup verifikasi matematis indikator teknikal, deteksi moment
 ```text
 ├── forex/
 │   ├── analysis.py          # Indikator teknikal multi-timeframe & kalkulasi ATR/RSI/EMA
-│   ├── backtest.py          # Engine replay historis komparatif v1 vs v2 & simulasi trade
+│   ├── backtest.py          # Engine replay historis komparatif v1 vs v3 & simulasi trade
 │   ├── config.py            # Parser konfigurasi lingkungan (.env)
 │   ├── instruments.py       # Parser simbol instrumen
 │   ├── llm.py               # Integrasi AI multi-provider (Groq, Gemini, DeepSeek)
@@ -191,7 +190,7 @@ Semua pengujian mencakup verifikasi matematis indikator teknikal, deteksi moment
 │   ├── product.py           # Konstanta strategi, versi, dan display name bot
 │   ├── providers.py         # Client Twelve Data, caching, resample & quota limiter
 │   ├── report.py            # Formatter laporan teks & markdown
-│   ├── smc.py               # Engine sinyal momentum candle (v1 & v2)
+│   ├── smc.py               # Engine sinyal momentum candle (v1 & v3)
 │   └── tracking.py          # SQLite forward test tracker & dynamic R calculator
 ├── deploy/                  # Template systemd timer/service dan contoh file konfigurasi
 ├── docs/                    # Dokumentasi panduan operasional (GUIDE.md)

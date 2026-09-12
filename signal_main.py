@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One-shot XAUUSD momentum signal confirmation run for a five-minute systemd timer.
 
-Evaluates momentum strategies (momentum_v1, momentum_v3, or momentum_v3_improved) according to the
+Evaluates momentum strategies (momentum_v1 or momentum_v3) according to the
 active Telegram toggle and environment settings.
 """
 
@@ -63,9 +63,7 @@ def _momentum_text(reading: MomentumReading, generated_at: Optional[datetime] = 
     else:
         action_str = "⏳ WAIT"
 
-    if reading.strategy_version == "momentum_v3_improved":
-        version_label = "🔥 Momentum MTF Pro (v3-Pro)"
-    elif reading.strategy_version == "momentum_v3":
+    if reading.strategy_version == "momentum_v3":
         version_label = "🎯 Momentum MTF 2-Candle (v3)"
     else:
         version_label = "⚡ Momentum Standar (v1)"
@@ -137,16 +135,16 @@ def main() -> int:
         signal_enabled = os.getenv("SIGNAL_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 
     db_strategy = tracker.get_state("signal_strategy")
-    if db_strategy in ("momentum_v1", "momentum_v3", "momentum_v3_improved", "all"):
+    if db_strategy in ("momentum_v1", "momentum_v3", "all"):
         active_strategy = db_strategy
-    elif db_strategy == "momentum_v2":
-        active_strategy = "momentum_v3_improved"
+    elif db_strategy in ("momentum_v2", "momentum_v3_improved"):
+        active_strategy = "momentum_v3"
     else:
-        active_strategy = os.getenv("SIGNAL_STRATEGY", "momentum_v3_improved").strip()
+        active_strategy = os.getenv("SIGNAL_STRATEGY", "momentum_v1").strip()
 
     # --- Momentum candle signals (single or all) ---
     target_strategies = (
-        ("momentum_v1", "momentum_v3", "momentum_v3_improved")
+        ("momentum_v1", "momentum_v3")
         if active_strategy == "all"
         else (active_strategy,)
     )
@@ -154,7 +152,7 @@ def main() -> int:
     strategy_events = []
 
     for strat in target_strategies:
-        default_rr = 1.0 if strat == "momentum_v1" else 2.0
+        default_rr = 1.0 if strat == "momentum_v1" else 1.5
         momentum_reward_r = float(os.getenv("SIGNAL_MOMENTUM_REWARD_R", str(default_rr)))
         reading = evaluate_momentum(
             m5,

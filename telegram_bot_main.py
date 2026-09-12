@@ -73,9 +73,7 @@ def _mode_text(tracker: SignalTracker) -> str:
     is_enabled = (db_enabled != "off") if db_enabled is not None else True
     db_strat = tracker.get_state("signal_strategy") or DEFAULT_STRATEGY_VERSION
     if db_strat == "all":
-        strat_label = "🌟 SEMUA AKTIF (v1 + v3 + v3-Pro)"
-    elif db_strat == "momentum_v3_improved":
-        strat_label = "🔥 Momentum MTF Pro (v3-Pro)"
+        strat_label = "🌟 SEMUA AKTIF (v1 + v3)"
     elif db_strat == "momentum_v3":
         strat_label = "🎯 Momentum MTF (v3)"
     else:
@@ -88,10 +86,9 @@ def _mode_text(tracker: SignalTracker) -> str:
         f"Strategi Aktif: {strat_label}",
         "",
         "Pilihan Versi:",
-        "• all (Multi)     : Ketiga strategi aktif bersamaan secara paralel",
-        "• v1 (Standar)    : M5 candle action, EMA 12/26, 1.0R",
-        "• v3 (Two Candles): M30 2-candle bias, M5 50% retracement entry, 2.0R",
-        "• v3-Pro (Improve): Two Candles + filter regime & M30 macro trend, 2.0R",
+        "• all (Multi)     : Kedua strategi aktif bersamaan secara paralel",
+        "• v1 (Standar)    : M5 candle action, EMA 12/26, 1.0R (Terbukti +28.0R)",
+        "• v3 (Two Candles): M30 2-candle bias, M5 swing retracement entry, 1.5R",
         "━━━━━━━━━━━━━━━━━━━━",
         "Tekan tombol di bawah untuk mengubah pengaturan:",
     ])
@@ -149,15 +146,12 @@ def _backtest_text() -> str:
     root = state_dir / "backtest"
     v1_summary = load_latest_summary(root / "momentum_v1" / "latest.json")
     v3_summary = load_latest_summary(root / "momentum_v3" / "latest.json")
-    v3_pro_summary = load_latest_summary(root / "momentum_v3_improved" / "latest.json")
 
     period = "90 hari terakhir"
-    if v3_pro_summary:
-        period = f"{v3_pro_summary.period_start[:10]} → {v3_pro_summary.period_end[:10]}"
+    if v1_summary:
+        period = f"{v1_summary.period_start[:10]} → {v1_summary.period_end[:10]}"
     elif v3_summary:
         period = f"{v3_summary.period_start[:10]} → {v3_summary.period_end[:10]}"
-    elif v1_summary:
-        period = f"{v1_summary.period_start[:10]} → {v1_summary.period_end[:10]}"
 
     lines = [
         f"🧪 {bot_name().upper()} — BACKTEST",
@@ -166,9 +160,7 @@ def _backtest_text() -> str:
         "",
         _format_backtest_card("⚡ Momentum Standar (v1)", v1_summary),
         "",
-        _format_backtest_card("🎯 Momentum MTF (v3)", v3_summary),
-        "",
-        _format_backtest_card("🔥 Momentum MTF Pro (v3-Pro)", v3_pro_summary),
+        _format_backtest_card("🎯 Momentum MTF 2-Candle (v3)", v3_summary),
         "━━━━━━━━━━━━━━━━━━━━",
         "Hasil historis bukan jaminan performa berikutnya.",
     ]
@@ -259,17 +251,13 @@ def _send_command(parts: list[str], config: TelegramConfig, tracker: SignalTrack
                 tracker.set_state("signal_strategy", "momentum_v1")
                 send_telegram("⚡ Strategi aktif diubah ke: Momentum Standar (v1).", config)
                 _send_mode(config, tracker)
-            elif arg in ("v3", "momentum_v3"):
+            elif arg in ("v3", "momentum_v3", "v3_improved", "pro"):
                 tracker.set_state("signal_strategy", "momentum_v3")
                 send_telegram("🎯 Strategi aktif diubah ke: Momentum MTF 2-Candle (v3).", config)
                 _send_mode(config, tracker)
-            elif arg in ("v3_improved", "v3-pro", "v3_pro", "pro", "momentum_v3_improved", "v2", "momentum_v2"):
-                tracker.set_state("signal_strategy", "momentum_v3_improved")
-                send_telegram("🔥 Strategi aktif diubah ke: Momentum MTF Pro (v3-Pro).", config)
-                _send_mode(config, tracker)
             elif arg in ("all", "multi", "semua"):
                 tracker.set_state("signal_strategy", "all")
-                send_telegram("🌟 Strategi aktif diubah ke: SEMUA AKTIF (v1 + v3 + v3-Pro).", config)
+                send_telegram("🌟 Strategi aktif diubah ke: SEMUA AKTIF (v1 + v3).", config)
                 _send_mode(config, tracker)
             else:
                 _send_mode(config, tracker)
@@ -330,14 +318,12 @@ def handle_callback(
         return
     if data.startswith("strat:"):
         strat = data.split(":", 1)[1]
-        if strat in ("momentum_v1", "momentum_v3", "momentum_v3_improved", "all", "momentum_v2"):
-            if strat == "momentum_v2":
-                strat = "momentum_v3_improved"
+        if strat in ("momentum_v1", "momentum_v3", "all", "momentum_v3_improved", "momentum_v2"):
+            if strat in ("momentum_v3_improved", "momentum_v2"):
+                strat = "momentum_v3"
             tracker.set_state("signal_strategy", strat)
             if strat == "all":
-                label = "🌟 Semua Aktif (v1 + v3 + Pro)"
-            elif strat == "momentum_v3_improved":
-                label = "🔥 Momentum v3 Pro (Optimized)"
+                label = "🌟 Semua Aktif (v1 + v3)"
             elif strat == "momentum_v3":
                 label = "🎯 Momentum v3 (Two Candles)"
             else:

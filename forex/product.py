@@ -9,10 +9,10 @@ def bot_name() -> str:
     return os.getenv("BOT_DISPLAY_NAME", "WG GoldPulse").strip() or "WG GoldPulse"
 
 
-DEFAULT_STRATEGY_VERSION = "momentum_v3_improved"
+DEFAULT_STRATEGY_VERSION = "momentum_v1"
 CURRENT_STRATEGY_VERSION = DEFAULT_STRATEGY_VERSION
-STRATEGY_VERSIONS = ("momentum_v1", "momentum_v3", "momentum_v3_improved")
-STRATEGY_MODES = ("momentum_v1", "momentum_v3", "momentum_v3_improved", "all")
+STRATEGY_VERSIONS = ("momentum_v1", "momentum_v3")
+STRATEGY_MODES = ("momentum_v1", "momentum_v3", "all")
 
 
 BOT_DESCRIPTION = (

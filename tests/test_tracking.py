@@ -114,15 +114,12 @@ def test_strategy_versions_have_isolated_limits_and_statistics(tmp_path):
     path = tmp_path / "signals.db"
     v1_tracker = SignalTracker(path, strategy_version="momentum_v1")
     v3_tracker = SignalTracker(path, strategy_version="momentum_v3")
-    v3_pro_tracker = SignalTracker(path, strategy_version="momentum_v3_improved")
     candle = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
     v1_tracker.create_signal(_reading(strategy_version="momentum_v1"), candle, candle)
 
     assert v1_tracker.stats().total == 1
     assert v3_tracker.stats().total == 0
-    assert v3_pro_tracker.stats().total == 0
     assert v3_tracker.can_create(now=candle + timedelta(minutes=5)) is True
-    assert v3_pro_tracker.can_create(now=candle + timedelta(minutes=5)) is True
 
 
 def test_footer_is_appended_when_database_is_configured(tmp_path, monkeypatch):
@@ -152,9 +149,9 @@ def test_state_round_trip(tmp_path):
 
 
 def test_momentum_signal_created_and_tracked(tmp_path):
-    tracker = SignalTracker(tmp_path / "signals.db", strategy_version="momentum_v3_improved")
+    tracker = SignalTracker(tmp_path / "signals.db", strategy_version="momentum_v1")
     candle = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
-    reading = _reading(strategy_version="momentum_v3_improved")
+    reading = _reading(strategy_version="momentum_v1")
     assert tracker.can_create(now=candle, signal_type="momentum")
     assert tracker.create_signal(reading, candle, candle, signal_type="momentum") is not None
     assert tracker.stats_by_type("momentum").active == 1
@@ -167,16 +164,15 @@ def test_all_mode_evaluates_and_resolves_all_versions(tmp_path):
     candle = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
     s1 = tracker.create_signal(_reading(strategy_version="momentum_v1"), candle, candle, strategy_version="momentum_v1")
     s2 = tracker.create_signal(_reading(strategy_version="momentum_v3"), candle, candle, strategy_version="momentum_v3")
-    s3 = tracker.create_signal(_reading(strategy_version="momentum_v3_improved"), candle, candle, strategy_version="momentum_v3_improved")
-    assert s1 and s2 and s3
+    assert s1 and s2
 
     stats_all = tracker.stats()
-    assert stats_all.active == 3
-    assert stats_all.total == 3
+    assert stats_all.active == 2
+    assert stats_all.total == 2
 
     resolved = tracker.evaluate(_frame(candle + timedelta(minutes=5), 102.5, 99.5), now=candle + timedelta(minutes=5))
-    assert resolved == 3
+    assert resolved == 2
     stats_resolved = tracker.stats()
-    assert stats_resolved.completed == 3
-    assert stats_resolved.wins == 3
+    assert stats_resolved.completed == 2
+    assert stats_resolved.wins == 2
     assert stats_resolved.losses == 0

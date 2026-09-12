@@ -28,7 +28,7 @@ def main() -> int:
     parser.add_argument("--notify", action="store_true", help="send the result to Telegram")
     parser.add_argument(
         "--strategy",
-        choices=("momentum_v1", "momentum_v3", "momentum_v3_improved", "all"),
+        choices=("momentum_v1", "momentum_v3", "all"),
         default="all",
     )
     parser.add_argument("--lookback-days", type=int, default=None)
@@ -68,7 +68,7 @@ def main() -> int:
     max_active = int(os.getenv("SIGNAL_MAX_ACTIVE_MOMENTUM", "3"))
 
     for version in target_versions:
-        default_rr = 1.0 if version == "momentum_v1" else 2.0
+        default_rr = 1.0 if version == "momentum_v1" else 1.5
         rr = args.momentum_rr if args.momentum_rr is not None else default_rr
         summary, trades = run_momentum_backtest(
             frames,
@@ -78,7 +78,7 @@ def main() -> int:
             cooldown_minutes=cooldown,
             max_active=max_active,
             reward_r=rr,
-            session_filter=(version in ("momentum_v3", "momentum_v3_improved")),
+            session_filter=(version == "momentum_v3"),
         )
         label = args.output_label if len(target_versions) == 1 and args.output_label else version
         save_backtest(backtest_dir / label, summary, trades)
@@ -89,10 +89,8 @@ def main() -> int:
 
     sections = []
     for version in target_versions:
-        if version == "momentum_v3_improved":
-            label = "🔥 Momentum MTF Pro · momentum_v3_improved (Optimized)"
-        elif version == "momentum_v3":
-            label = "🎯 Momentum MTF · momentum_v3 (Two Candles)"
+        if version == "momentum_v3":
+            label = "🎯 Momentum MTF · momentum_v3 (Two Candles Hybrid)"
         else:
             label = "⚡ Momentum Candle · momentum_v1 (Standar)"
         sections.append(f"📋 {label}\n" + format_backtest(results[version], trades_map[version]))

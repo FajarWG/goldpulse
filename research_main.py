@@ -64,11 +64,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    default_path = Path("/var/lib/xauusd-analysis/backtest/momentum_v3_improved/latest_trades.csv")
+    default_path = Path("/var/lib/xauusd-analysis/backtest/momentum_v1/latest_trades.csv")
     if not default_path.exists():
         default_path = Path("/var/lib/xauusd-analysis/backtest/momentum_v3/latest_trades.csv")
-    if not default_path.exists():
-        default_path = Path("/var/lib/xauusd-analysis/backtest/momentum_v1/latest_trades.csv")
     path = Path(args.trades_csv) if args.trades_csv else default_path
     if not path.exists():
         print(f"File tidak ditemukan: {path}", file=sys.stderr)
