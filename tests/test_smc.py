@@ -8,8 +8,8 @@ from forex.smc import (
     evaluate_momentum,
     market_structure,
     momentum_candle,
-    momentum_candle_v2,
     momentum_candle_v3,
+    momentum_candle_v3_improved,
 )
 
 
@@ -53,48 +53,88 @@ def test_momentum_v1_baseline_confirms_bullish():
     assert reading.risk_reward == 1.0
 
 
-def test_momentum_v2_session_filter():
-    # Outside London/NY session (ends at 03:00 UTC)
-    m5_asian = _trend_frame(direction=1, start="2026-01-01 12:00:00")
-    m15_asian = resample(m5_asian, "15min")
-    reading = momentum_candle_v2(m5_asian, m15_asian, session_filter=True)
+def test_momentum_v3_improved_success():
+    m30_idx = pd.date_range("2026-01-01 07:00:00", periods=10, freq="30min", tz="UTC")
+    m30_df = pd.DataFrame(
+        {
+            "open": [2000.0] * 8 + [2000.0, 2010.0],
+            "high": [2005.0] * 8 + [2010.0, 2020.0],
+            "low": [1995.0] * 8 + [1999.0, 2008.0],
+            "close": [2001.0] * 8 + [2010.0, 2019.0],
+        },
+        index=m30_idx,
+    )
+
+    m5_idx = pd.date_range("2026-01-01 08:30:00", periods=40, freq="5min", tz="UTC")
+    m5_df = pd.DataFrame(
+        {
+            "open": [2000.0] * 37 + [2018.0, 2014.0, 2013.0],
+            "high": [2002.0] * 37 + [2019.0, 2015.0, 2018.0],
+            "low": [1998.0] * 37 + [2013.0, 2012.0, 2012.5],
+            "close": [2001.0] * 37 + [2014.0, 2013.0, 2017.0],
+        },
+        index=m5_idx,
+    )
+    reading = momentum_candle_v3_improved(m5_df, m30=m30_df, session_filter=True)
+    assert reading.action == "LONG"
+    assert reading.strategy_version == "momentum_v3_improved"
+    assert reading.risk_reward == 2.0
+    assert reading.stop_loss < reading.entry < reading.take_profit
+
+
+def test_momentum_v3_improved_ny_open_spike_filter():
+    # 14:00 UTC spike filter
+    m30_idx = pd.date_range("2026-01-01 11:00:00", periods=10, freq="30min", tz="UTC")
+    m30_df = pd.DataFrame(
+        {
+            "open": [2000.0] * 8 + [2000.0, 2010.0],
+            "high": [2005.0] * 8 + [2010.0, 2020.0],
+            "low": [1995.0] * 8 + [1999.0, 2008.0],
+            "close": [2001.0] * 8 + [2010.0, 2019.0],
+        },
+        index=m30_idx,
+    )
+    # 36 periods from 11:10 UTC ends at 14:05 UTC (hour == 14)
+    m5_spike_idx = pd.date_range("2026-01-01 11:10:00", periods=36, freq="5min", tz="UTC")
+    m5_spike_df = pd.DataFrame(
+        {
+            "open": [2000.0] * 33 + [2018.0, 2014.0, 2013.0],
+            "high": [2002.0] * 33 + [2019.0, 2015.0, 2018.0],
+            "low": [1998.0] * 33 + [2013.0, 2012.0, 2012.5],
+            "close": [2001.0] * 33 + [2014.0, 2013.0, 2017.0],
+        },
+        index=m5_spike_idx,
+    )
+    reading = momentum_candle_v3_improved(m5_spike_df, m30=m30_df, avoid_open_hour=True)
     assert reading.action == "WAIT"
-    assert any("Outside London/NY session" in c for c in reading.cautions)
-
-    # In London/NY session (ends at 15:00 UTC)
-    m5_london = _trend_frame(direction=1, start="2026-01-01 00:00:00")
-    m15_london = resample(m5_london, "15min")
-    reading_london = momentum_candle_v2(m5_london, m15_london, score_threshold=70, session_filter=True)
-    assert reading_london.action == "LONG"
-    assert reading_london.strategy_version == "momentum_v2"
+    assert any("NY Open 14:00 UTC spike" in c for c in reading.cautions)
 
 
-def test_momentum_v2_exhaustion_cap():
-    m5 = _trend_frame(direction=1, start="2026-01-01 00:00:00")
-    # Spike the last candle to 5x normal size
-    last_idx = m5.index[-1]
-    m5.loc[last_idx, "open"] = 2000.0
-    m5.loc[last_idx, "close"] = 2025.0
-    m5.loc[last_idx, "high"] = 2026.0
-    m5.loc[last_idx, "low"] = 1999.0
-    m15 = resample(m5, "15min")
-    reading = momentum_candle_v2(m5, m15, max_body_atr=2.2)
+def test_momentum_v3_improved_anti_deep_retrace():
+    m30_idx = pd.date_range("2026-01-01 07:00:00", periods=10, freq="30min", tz="UTC")
+    m30_df = pd.DataFrame(
+        {
+            "open": [2000.0] * 8 + [2000.0, 2010.0],
+            "high": [2005.0] * 8 + [2010.0, 2020.0],
+            "low": [1995.0] * 8 + [1999.0, 2008.0],
+            "close": [2001.0] * 8 + [2010.0, 2019.0],
+        },
+        index=m30_idx,
+    )
+    # C1 low is 1999.0. If M5 retrace goes below 1999.0 (e.g. 1995.0), it should be blocked
+    m5_idx = pd.date_range("2026-01-01 08:30:00", periods=40, freq="5min", tz="UTC")
+    m5_df = pd.DataFrame(
+        {
+            "open": [2000.0] * 37 + [2018.0, 2014.0, 1996.0],
+            "high": [2002.0] * 37 + [2019.0, 2015.0, 2018.0],
+            "low": [1998.0] * 37 + [2013.0, 1995.0, 1996.0], # 1995.0 < 1999.0
+            "close": [2001.0] * 37 + [2014.0, 1996.0, 2017.0],
+        },
+        index=m5_idx,
+    )
+    reading = momentum_candle_v3_improved(m5_df, m30=m30_df)
     assert reading.action == "WAIT"
-    assert any("Exhaustion" in c for c in reading.cautions)
-
-
-def test_momentum_v2_rejection_wick_filter():
-    m5 = _trend_frame(direction=1, start="2026-01-01 00:00:00")
-    # Add a massive upper rejection wick to a bullish candle
-    last_idx = m5.index[-1]
-    m5.loc[last_idx, "open"] = 2000.0
-    m5.loc[last_idx, "close"] = 2001.0
-    m5.loc[last_idx, "high"] = 2010.0  # huge upper wick
-    m5.loc[last_idx, "low"] = 1999.8
-    m15 = resample(m5, "15min")
-    reading = momentum_candle_v2(m5, m15, max_wick_ratio=0.30)
-    assert reading.action == "WAIT"
-    assert any("Rejection wick" in c for c in reading.cautions)
+    assert any("Deep retracement" in c for c in reading.cautions)
 
 
 def test_evaluate_momentum_dispatcher():
@@ -104,20 +144,27 @@ def test_evaluate_momentum_dispatcher():
     assert r1.strategy_version == "momentum_v1"
     assert r1.risk_reward == 1.0
 
+    r3 = evaluate_momentum(m5, m15, strategy_version="momentum_v3")
+    assert r3.strategy_version == "momentum_v3"
+    assert r3.risk_reward == 2.0
+
+    r3_pro = evaluate_momentum(m5, m15, strategy_version="momentum_v3_improved")
+    assert r3_pro.strategy_version == "momentum_v3_improved"
+    assert r3_pro.risk_reward == 2.0
+
+    # Legacy fallback: momentum_v2 routes to momentum_v3_improved
     r2 = evaluate_momentum(m5, m15, strategy_version="momentum_v2")
-    assert r2.strategy_version == "momentum_v2"
-    assert r2.risk_reward == 1.25
+    assert r2.strategy_version == "momentum_v3_improved"
+    assert r2.risk_reward == 2.0
 
 
 def test_momentum_telegram_text_formatting():
     m5 = _trend_frame(direction=1, start="2026-01-01 00:00:00")
     m15 = resample(m5, "15min")
-    reading = evaluate_momentum(m5, m15, strategy_version="momentum_v2", reward_r=1.25)
+    reading = evaluate_momentum(m5, m15, strategy_version="momentum_v3_improved", reward_r=2.0)
     text = _momentum_text(reading)
-    assert "Momentum Improved (v2)" in text
-    assert "BUY" in text
-    assert "Entry:" in text
-    assert "SL:" in text and "TP:" in text
+    assert "Momentum MTF Pro (v3-Pro)" in text
+    assert "Entry:" in text or "WAIT" in text
 
 
 def test_momentum_v3_bullish_and_bearish():

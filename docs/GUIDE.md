@@ -18,13 +18,13 @@ Twelve Data key 1 + key 2
           │     H1 + H4 + D1 → tren besar → Telegram market update
           │
           ├── Setiap 5 menit mulai :02 JST
-          │     M5 → M15 → Momentum (v1/v2) → WAIT atau LONG/SHORT
-          │                                      │
-          │                                      ├── Telegram (toggleable on/off & v1/v2 via /mode)
-          │                                      └── SQLite forward validation
+          │     M5 → M15/M30 → Momentum (v1/v3/v3-Pro) → WAIT atau LONG/SHORT
+          │                                                  │
+          │                                                  ├── Telegram (toggleable on/off & switch via /mode)
+          │                                                  └── SQLite forward validation
           │
           └── Sabtu 07:30 JST
-                Refresh incremental → replay momentum_v1 & momentum_v2 → Telegram backtest report
+                Refresh incremental → replay semua strategi → Telegram backtest report
 ```
 
 Urutan `:00` lalu `:02` memastikan analisis besar diperbarui sebelum pemeriksaan signal pertama pada jam tersebut.
@@ -34,24 +34,26 @@ Urutan `:00` lalu `:02` memastikan analisis besar diperbarui sebelum pemeriksaan
 ### 1. Analisis multi-timeframe
 
 - H1, H4, dan D1 untuk arah besar.
+- M30 untuk roadmap pola 2 candle & macro trend EMA 50.
 - M15 untuk konfirmasi struktur.
-- M5 untuk timing signal.
+- M5 untuk timing signal & entry retracement.
 - EMA, RSI, MACD, ATR, Bollinger, Donchian, range, dan volatility regime.
 
-### 2. Strategi Momentum Candle (v1 & v2)
+### 2. Strategi Momentum Candle
 
 - **`momentum_v1` (Standar):** Candle action M5, perbandingan body vs range, alignment EMA 12/26, skor momentum >= 80, target reward 1.0R.
-- **`momentum_v2` (Improved):** Peningkatan dari v1 dengan:
-  - *Session Filter:* Fokus pada London & NY killzones (07:00–17:00 UTC).
-  - *Exhaustion/Climax Cap:* Menolak candle overstretched (`body_atr <= 2.2`).
-  - *Rejection Wick Filter:* Menolak candle dengan ekor lawan terlalu panjang (`opposing_wick / range <= 0.30`).
-  - *M15 Trend Confluence:* Mewajibkan alignment tren M15 (`m15_aligned`).
-  - *Risk-to-Reward Adaptive:* Target reward default 1.25R.
+- **`momentum_v3` (Two Candles MTF):** Roadmap 2 Candle M30 (C1 impulsif + C2 lanjutan searah) + M5 retracement ke zona 50% equilibrium, target reward 2.0R.
+- **`momentum_v3_improved` (Pro Optimized):** Peningkatan dari v3 berbasis data empiris backtest 133 trade:
+  - *M30 Macro Trend Confluence:* Entry Long hanya jika C2 >= EMA 50 M30, Short jika C2 <= EMA 50 M30.
+  - *Volatility Regime Gate:* Memblokir sinyal saat regime `high_vol` (historis win rate hanya 31.2%).
+  - *NY Open Spike Filter:* Memfilter jam 14:00 UTC (Wall Street open whipsaw).
+  - *Anti-Deep Retracement:* Membatalkan sinyal jika candle M5 menembus batas invalidasi C1.
+  - *Target Reward:* Default 2.0R.
 
 ### 3. Forward validation otomatis
 
 - Semua signal READY disimpan dan dinilai otomatis.
-- TP lebih dulu: menang sesuai reward rasio sebenarnya (`+1.0R` atau `+1.25R`).
+- TP lebih dulu: menang sesuai reward rasio sebenarnya (`+1.0R` atau `+2.0R`).
 - SL lebih dulu: kalah `-1.0R`.
 - TP dan SL pada candle M5 yang sama: dihitung kalah secara konservatif.
 - Tidak selesai dalam empat jam: kedaluwarsa dan tidak masuk pembagi win rate.
@@ -59,10 +61,10 @@ Urutan `:00` lalu `:02` memastikan analisis besar diperbarui sebelum pemeriksaan
 
 ### 4. Telegram interaktif
 
-- `⚙️ Mode Signal` / `/mode`: Mengatur status signal (ON / OFF) dan memilih versi strategi aktif (`momentum_v1` vs `momentum_v2`) secara live lewat tombol inline atau command text.
+- `⚙️ Mode Signal` / `/mode`: Mengatur status signal (ON / OFF) dan memilih versi strategi aktif (`momentum_v1`, `momentum_v3`, `momentum_v3_improved`, atau `all`) secara live lewat tombol inline atau command text.
 - `🤖 Analisis AI` / `/ai`: Menjelaskan kondisi teknikal pasar terakhir.
 - `📊 Statistik` / `/stats`: Membuka rekap forward validation beserta breakdown per versi momentum.
-- `🧪 Backtest` / `/backtest`: Membuka perbandingan historical backtest `momentum_v1` vs `momentum_v2`.
+- `🧪 Backtest` / `/backtest`: Membuka perbandingan historical backtest ketiga strategi.
 - `ℹ️ Bantuan` / `/help`: Menampilkan panduan dan daftar command bot.
 
 ### 5. AI explanation
@@ -88,10 +90,11 @@ Referensi konfigurasi resmi: [Groq OpenAI compatibility](https://console.groq.co
 
 ## Historical backtest
 
-Backtest menyimpan versi strategi secara terpisah agar perbandingan performa terukur secara objektif. Sistem membandingkan dua versi strategi momentum:
+Backtest menyimpan versi strategi secara terpisah agar perbandingan performa terukur secara objektif. Sistem membandingkan ketiga strategi momentum:
 
-- **`momentum_v1` (Standar):** Candle action M5 murni, alignment EMA 12/26, skor momentum >= 80, target reward 1.0R.
-- **`momentum_v2` (Improved):** Peningkatan dengan session filter (London/NY), exhaustion cap, filter rejection wick, konfirmasi arah tren M15, dan reward 1.25R.
+- **`momentum_v1` (Standar):** Candle action M5 murni, alignment EMA 12/26, reward 1.0R.
+- **`momentum_v3` (Two Candles MTF):** Pola 2 candle M30 + retracement M5 50%, reward 2.0R.
+- **`momentum_v3_improved` (Pro):** Pola 2 candle + M30 EMA 50 + anti-high_vol + anti-14:00 UTC spike, reward 2.0R.
 
 Data yang diambil dan disimpan lokal:
 
@@ -104,7 +107,7 @@ Twelve Data membatasi satu respons historical time series hingga 5.000 data poin
 
 ### Otomatis
 
-Backtest mingguan berjalan setiap Sabtu pukul 07:30 JST, setelah sesi mingguan XAUUSD ditutup. Cache lama dipertahankan; hanya bagian data terbaru yang diambil. Replay default memakai 90 hari terakhir dan laporan perbandingan `momentum_v1` vs `momentum_v2` dikirim ke Telegram.
+Backtest mingguan berjalan setiap Sabtu pukul 07:30 JST, setelah sesi mingguan XAUUSD ditutup. Cache lama dipertahankan; hanya bagian data terbaru yang diambil. Replay default memakai 90 hari terakhir dan laporan perbandingan `momentum_v1`, `momentum_v3`, dan `momentum_v3_improved` dikirim ke Telegram.
 
 ### Manual
 
@@ -123,10 +126,13 @@ cd /opt/xauusd-analysis
 # Replay momentum_v1 saja
 sudo -u ubuntu /opt/xauusd-analysis/.venv/bin/python backtest_main.py --strategy momentum_v1
 
-# Replay momentum_v2 (improved) saja
-sudo -u ubuntu /opt/xauusd-analysis/.venv/bin/python backtest_main.py --strategy momentum_v2
+# Replay momentum_v3 saja
+sudo -u ubuntu /opt/xauusd-analysis/.venv/bin/python backtest_main.py --strategy momentum_v3
 
-# Perbandingan kedua versi
+# Replay momentum_v3_improved (Pro) saja
+sudo -u ubuntu /opt/xauusd-analysis/.venv/bin/python backtest_main.py --strategy momentum_v3_improved
+
+# Perbandingan semua versi
 sudo -u ubuntu /opt/xauusd-analysis/.venv/bin/python backtest_main.py --strategy all
 ```
 

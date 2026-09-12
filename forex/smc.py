@@ -2,11 +2,10 @@
 
 Supports three versions:
   - momentum_v1: Baseline candle-action momentum strategy.
-  - momentum_v2: Improved momentum with session filter (London/NY killzones),
-                 exhaustion/climax cap, rejection wick filter, strict M15 trend
-                 alignment, and adaptive risk-to-reward ratio.
   - momentum_v3: Multi-timeframe 2-candle momentum strategy (M30 roadmap + M5
                  50% retracement entry) with 1:2 risk-to-reward ratio.
+  - momentum_v3_improved: MTF 2-candle Pro with M30 macro trend filter (EMA 50),
+                          volatility regime gating, NY open spike filter, and anti-deep retrace.
 
 No broker, account, position sizing, or order execution code belongs here.
 """
@@ -308,162 +307,259 @@ def momentum_candle(
     )
 
 
-def momentum_candle_v2(
+def momentum_candle_v3_improved(
     m5: pd.DataFrame,
-    m15: pd.DataFrame,
+    m30: Optional[pd.DataFrame] = None,
     score_threshold: int = 80,
-    reward_r: float = 1.25,
+    reward_r: float = 2.0,
     session_filter: bool = True,
-    max_body_atr: float = 2.2,
-    max_wick_ratio: float = 0.30,
+    max_opposing_wick_ratio: float = 0.35,
+    min_c1_body_ratio: float = 0.45,
+    avoid_open_hour: bool = True,
+    macro_ema_period: int = 50,
 ) -> MomentumReading:
-    """Improved momentum signal (momentum_v2).
+    """Optimized multi-timeframe 2-candle momentum strategy (momentum_v3_improved).
 
-    Key enhancements:
-      1. Session Filter: Focus on London and New York sessions (07:00-17:00 UTC).
-         Filters out Asian and rollover low-liquidity fakeouts.
-      2. Exhaustion/Climax Filter: Blocks candles with body > 2.2x ATR (news spikes/exhaustion).
-      3. Rejection Wick Filter: Blocks candles with opposing wick > 30% of total range.
-      4. Strict M15 Trend Confluence: M15 structure MUST align with candle direction.
-      5. Enhanced Risk-to-Reward: Default 1.25R.
+    Built on empirical findings from 133 backtest trades:
+      1. HTF 2-Candle Roadmap (M30):
+         - C1 impulsive + C2 continuation with low opposing wick (<35%).
+      2. M30 Macro Trend Confluence (EMA 50):
+         - Long only when C2 close >= M30 EMA 50.
+         - Short only when C2 close <= M30 EMA 50.
+         - Solves directional asymmetry (historically Short 56.5% WR vs Long 41.1% WR).
+      3. Anti-Deep Retracement:
+         - Invalidates setup if M5 breaks past C1 invalidation boundary (C1 low for Long, C1 high for Short).
+      4. Volatility Regime Gate:
+         - Rejects setups during high-volatility regimes (backtest showed 31.2% WR, -1.0R in high_vol).
+      5. NY Open Spike Filter:
+         - Filters out hour 14:00 UTC (Wall Street open whipsaw, backtest showed 37.5% WR).
+      6. 50% Equilibrium Retracement + M5 confirmation candle.
+      7. Risk Management:
+         - Stop Loss placed outside C2 range (+ 0.2 ATR buffer).
+         - Target 2.0R default.
     """
-    if len(m5) < 35 or len(m15) < 20:
+    if len(m5) < 35:
         raise ValueError("insufficient candles for momentum candle evaluation")
 
     m5 = m5.copy().dropna(subset=["open", "high", "low", "close"])
-    m15 = m15.copy().dropna(subset=["open", "high", "low", "close"])
+    if m30 is None:
+        from .providers import resample
+        m30 = resample(m5, "30min")
+    else:
+        m30 = m30.copy().dropna(subset=["open", "high", "low", "close"])
 
-    price = float(m5.iloc[-1]["close"])
-    atr_val = _atr(m5)
-    rsi_val = _rsi(m5)
+    if len(m30) < 5:
+        raise ValueError("insufficient candles for momentum candle evaluation")
+
+    c1 = m30.iloc[-2]
+    c2 = m30.iloc[-1]
+    c2_timestamp = m30.index[-1]
+
+    c1_open = float(c1["open"])
+    c1_close = float(c1["close"])
+    c1_high = float(c1["high"])
+    c1_low = float(c1["low"])
+    c1_range = c1_high - c1_low
+    c1_body = abs(c1_close - c1_open)
+    c1_body_ratio = (c1_body / c1_range) if c1_range > 0 else 0.0
+
+    c2_open = float(c2["open"])
+    c2_close = float(c2["close"])
+    c2_high = float(c2["high"])
+    c2_low = float(c2["low"])
+    c2_range = c2_high - c2_low
+    c2_body = abs(c2_close - c2_open)
+    c2_body_ratio = (c2_body / c2_range) if c2_range > 0 else 0.0
+
+    atr30 = _atr(m30)
+    atr5 = _atr(m5)
+    rsi5 = _rsi(m5)
     regime = volatility_regime(m5["close"])
 
-    last = m5.iloc[-1]
-    body_ratio = _candle_body_ratio(last)
-    body_size = abs(float(last["close"]) - float(last["open"]))
-    total_range = float(last["high"]) - float(last["low"])
-    is_bullish = float(last["close"]) > float(last["open"])
-    direction = "long" if is_bullish else "short"
+    c1_is_bullish = c1_close > c1_open
+    c1_is_bearish = c1_close < c1_open
+    c1_impulsive = (c1_body_ratio >= min_c1_body_ratio) and (c1_body >= 0.35 * atr30 if atr30 > 0 else True)
 
-    # --- 1. Session Filter ---
+    c2_is_bullish = c2_close > c2_open
+    c2_is_bearish = c2_close < c2_open
+
+    upper_wick_c2 = c2_high - max(c2_open, c2_close)
+    lower_wick_c2 = min(c2_open, c2_close) - c2_low
+    opposing_wick_c2 = upper_wick_c2 if c2_is_bullish else lower_wick_c2
+    opposing_wick_ratio = (opposing_wick_c2 / c2_range) if c2_range > 0 else 0.0
+    c2_no_rejection = opposing_wick_ratio <= max_opposing_wick_ratio
+
+    bullish_setup = (
+        c1_is_bullish
+        and c1_impulsive
+        and c2_is_bullish
+        and c2_no_rejection
+        and (c2_close >= c1_close or c2_high >= c1_high)
+    )
+    bearish_setup = (
+        c1_is_bearish
+        and c1_impulsive
+        and c2_is_bearish
+        and c2_no_rejection
+        and (c2_close <= c1_close or c2_low <= c1_low)
+    )
+
+    htf_bias = "LONG" if bullish_setup else ("SHORT" if bearish_setup else None)
+
+    # Session & Hour check
+    last_m5 = m5.iloc[-1]
     last_timestamp = m5.index[-1]
-    utc_time = last_timestamp.tz_convert("UTC") if last_timestamp.tzinfo else last_timestamp.tz_localize("UTC")
-    in_session = (7 <= utc_time.hour <= 17) and (utc_time.dayofweek < 5)
+    in_session = True
+    is_ny_open_spike = False
+    if isinstance(last_timestamp, pd.Timestamp):
+        utc_time = last_timestamp.tz_convert("UTC") if last_timestamp.tzinfo else last_timestamp.tz_localize("UTC")
+        in_session = (7 <= utc_time.hour <= 17) and (utc_time.dayofweek < 5)
+        is_ny_open_spike = (utc_time.hour == 14) and avoid_open_hour
 
-    # --- 2. Rejection Wick Check ---
-    rejection_wick = False
-    upper_wick = float(last["high"]) - max(float(last["open"]), float(last["close"]))
-    lower_wick = min(float(last["open"]), float(last["close"])) - float(last["low"])
-    if total_range > 0:
-        if is_bullish and (upper_wick / total_range) > max_wick_ratio:
-            rejection_wick = True
-        elif not is_bullish and (lower_wick / total_range) > max_wick_ratio:
-            rejection_wick = True
+    # M30 Macro Trend Confluence (EMA 50 on M30)
+    ema_span = min(macro_ema_period, len(m30))
+    m30_ema = float(m30["close"].ewm(span=ema_span, adjust=False).mean().iloc[-1])
+    macro_aligned = False
+    if htf_bias == "LONG":
+        macro_aligned = c2_close >= m30_ema
+    elif htf_bias == "SHORT":
+        macro_aligned = c2_close <= m30_ema
 
-    # --- 3. Body vs ATR (Exhaustion / Climax) ---
-    body_atr = (body_size / atr_val) if atr_val > 0 else 0.0
-    is_exhaustion = body_atr > max_body_atr
+    # 50% Equilibrium level of C2
+    c2_mid = (c2_high + c2_low) / 2.0
 
-    # --- 4. M15 Structure ---
-    m15_struct = market_structure(m15)
-    m15_aligned = m15_struct.direction == ("bullish" if is_bullish else "bearish")
+    # Determine M5 bars of the current developing M30 candle
+    if isinstance(m5.index, pd.DatetimeIndex) and isinstance(c2_timestamp, pd.Timestamp):
+        curr_m5_bars = m5.loc[m5.index > c2_timestamp]
+    else:
+        curr_m5_bars = m5.tail(6)
 
-    # --- 5. EMA alignment (fast 12 / slow 26) ---
+    if curr_m5_bars.empty:
+        curr_m5_bars = m5.tail(1)
+
+    m5_close = float(last_m5["close"])
+    m5_open = float(last_m5["open"])
+    m5_high = float(last_m5["high"])
+    m5_low = float(last_m5["low"])
+    m5_range = m5_high - m5_low
+    m5_body = abs(m5_close - m5_open)
+    m5_body_ratio = (m5_body / m5_range) if m5_range > 0 else 0.0
+
+    # Retracement & Anti-deep retrace check
+    retrace_happened = False
+    deep_retrace = False
+    m5_confirmed = False
+    if htf_bias == "LONG":
+        min_low = float(curr_m5_bars["low"].min())
+        retrace_happened = min_low <= c2_mid
+        deep_retrace = min_low < c1_low
+        m5_confirmed = m5_close > m5_open
+    elif htf_bias == "SHORT":
+        max_high = float(curr_m5_bars["high"].max())
+        retrace_happened = max_high >= c2_mid
+        deep_retrace = max_high > c1_high
+        m5_confirmed = m5_close < m5_open
+
     ema_fast = float(m5["close"].ewm(span=12, adjust=False).mean().iloc[-1])
     ema_slow = float(m5["close"].ewm(span=26, adjust=False).mean().iloc[-1])
-    ema_aligned = (ema_fast > ema_slow) if is_bullish else (ema_fast < ema_slow)
+    ema_aligned = (ema_fast > ema_slow) if (htf_bias == "LONG") else ((ema_fast < ema_slow) if (htf_bias == "SHORT") else False)
 
-    # --- 6. Volume ---
     vol_df = m5 if "volume" in m5.columns else pd.DataFrame()
     volume_aligned = False
     if not vol_df.empty and vol_df["volume"].astype(float).nunique() > 1:
         from .analysis import obv as obv_fn
-
         obv_series = obv_fn(vol_df)
         if len(obv_series.dropna()) >= 25:
             slope = float(obv_series.iloc[-1]) - float(obv_series.iloc[-25])
-            volume_aligned = (slope > 0) if is_bullish else (slope < 0)
+            volume_aligned = (slope > 0) if (htf_bias == "LONG") else (slope < 0)
 
-    # --- Scoring ---
     score = 0
     reasons: List[str] = []
     cautions: List[str] = []
 
     if in_session:
-        reasons.append(f"High-liquidity session ({utc_time.hour:02d}:00 UTC)")
+        reasons.append(f"High-liquidity session ({utc_time.hour:02d}:00 UTC)" if isinstance(last_timestamp, pd.Timestamp) else "In session")
+        score += 10
     elif session_filter:
         cautions.append("Outside London/NY session (07:00-17:00 UTC)")
 
-    if body_ratio >= 0.6:
-        score += 35
-        reasons.append(f"M5 strong {'bullish' if is_bullish else 'bearish'} candle (body {body_ratio:.0%})")
-    elif body_ratio >= 0.45:
-        score += 20
-        reasons.append(f"M5 solid {'bullish' if is_bullish else 'bearish'} candle (body {body_ratio:.0%})")
-
-    if 0.3 <= body_atr <= max_body_atr:
-        score += 20
-        reasons.append(f"M5 body {body_atr:.1f}x ATR (healthy momentum)")
-    elif 0.15 <= body_atr < 0.3:
-        score += 10
-        reasons.append(f"M5 body {body_atr:.1f}x ATR")
-    elif is_exhaustion:
-        cautions.append(f"Exhaustion / climax candle ({body_atr:.1f}x ATR > {max_body_atr}x limit)")
-
-    if rejection_wick:
-        cautions.append(f"Rejection wick opposes direction (>{max_wick_ratio:.0%})")
-
-    if ema_aligned:
-        score += 20
-        reasons.append(f"M5 EMA 12/26 {'bullish' if is_bullish else 'bearish'} alignment")
-    else:
-        cautions.append("EMA 12/26 does not confirm candle direction")
-
-    if is_bullish and rsi_val >= 55:
-        score += 20 if rsi_val >= 65 else 10
-        reasons.append(f"M5 RSI bullish momentum ({rsi_val:.1f})")
-    elif not is_bullish and rsi_val <= 45:
-        score += 20 if rsi_val <= 35 else 10
-        reasons.append(f"M5 RSI bearish momentum ({rsi_val:.1f})")
-
-    if m15_aligned:
-        score += 15
-        reasons.append(f"M15 {'bullish' if is_bullish else 'bearish'} structure aligned")
-    else:
-        cautions.append(f"M15 structure is not {direction}")
-
-    if volume_aligned:
-        score += 10
-        reasons.append("Volume confirms momentum")
+    if is_ny_open_spike:
+        cautions.append("NY Open 14:00 UTC spike window filtered out")
 
     if regime == "high_vol":
-        cautions.append("High-volatility regime")
+        cautions.append("High-volatility regime filtered out (empirical loss rate >68%)")
+    else:
+        score += 10
+        reasons.append(f"Favorable volatility regime ({regime})")
 
-    # Hard Gates for v2
-    meaningful_body = body_ratio >= 0.45 and body_atr >= 0.20
+    if htf_bias is not None:
+        score += 30
+        reasons.append(f"M30 2-candle {htf_bias.lower()} roadmap confirmed (C1 body {c1_body_ratio:.0%})")
+    else:
+        cautions.append("M30 2-candle roadmap setup not met")
+
+    if macro_aligned:
+        score += 20
+        reasons.append(f"M30 Macro Trend aligned (close vs EMA {ema_span})")
+    elif htf_bias is not None:
+        cautions.append(f"Opposes M30 Macro Trend (EMA {ema_span})")
+
+    if retrace_happened:
+        score += 15
+        reasons.append(f"M5 retraced to 50% equilibrium ({c2_mid:.2f})")
+    else:
+        cautions.append("Waiting for M5 retracement to 50% equilibrium")
+
+    if deep_retrace:
+        cautions.append("Deep retracement breached C1 invalidation boundary")
+
+    if m5_confirmed:
+        score += 15
+        reasons.append(f"M5 candle confirms {htf_bias.lower()} continuation")
+    else:
+        cautions.append("M5 candle does not confirm continuation")
+
+    if ema_aligned:
+        score += 10
+        reasons.append("M5 EMA aligns with M30 roadmap")
+
+    # Hard Gates for v3_improved
     gates_passed = (
-        meaningful_body
-        and (not is_exhaustion)
-        and (not rejection_wick)
+        (htf_bias in ("LONG", "SHORT"))
+        and retrace_happened
+        and (not deep_retrace)
+        and macro_aligned
+        and m5_confirmed
         and (in_session or not session_filter)
-        and m15_aligned
-        and ema_aligned
+        and (not is_ny_open_spike)
+        and (regime != "high_vol")
         and score >= score_threshold
     )
 
-    action = direction.upper() if gates_passed else "WAIT"
+    action = htf_bias if gates_passed else "WAIT"
 
-    # Entry / SL / TP
+    price = m5_close
     entry = stop = target = None
     risk_reward = reward_r
+
     if action == "LONG":
         entry = price
-        stop = float(last["low"]) - atr_val * 0.3
-        target = price + (price - stop) * risk_reward
+        stop = c2_low - atr5 * 0.2
+        risk = entry - stop
+        if risk > 0:
+            target = entry + risk * reward_r
+        else:
+            action = "WAIT"
+            cautions.append("Stop loss is above entry price")
     elif action == "SHORT":
         entry = price
-        stop = float(last["high"]) + atr_val * 0.3
-        target = price - (stop - price) * risk_reward
+        stop = c2_high + atr5 * 0.2
+        risk = stop - entry
+        if risk > 0:
+            target = entry - risk * reward_r
+        else:
+            action = "WAIT"
+            cautions.append("Stop loss is below entry price")
 
     return MomentumReading(
         action=action,
@@ -473,17 +569,17 @@ def momentum_candle_v2(
         stop_loss=stop,
         take_profit=target,
         risk_reward=risk_reward,
-        rsi=rsi_val,
-        atr=atr_val,
+        rsi=rsi5,
+        atr=atr5,
         candle_pattern=candle_pattern(m5),
-        m5_body_ratio=round(body_ratio, 3),
+        m5_body_ratio=round(m5_body_ratio, 3),
         ema_aligned=ema_aligned,
-        m15_aligned=m15_aligned,
+        m15_aligned=(htf_bias is not None),
         volume_aligned=volume_aligned,
         regime=regime,
         reasons=reasons,
         cautions=cautions,
-        strategy_version="momentum_v2",
+        strategy_version="momentum_v3_improved",
     )
 
 
@@ -727,7 +823,7 @@ def momentum_candle_v3(
 def evaluate_momentum(
     m5: pd.DataFrame,
     m15: pd.DataFrame,
-    strategy_version: str = "momentum_v2",
+    strategy_version: str = "momentum_v3_improved",
     reward_r: Optional[float] = None,
     session_filter: bool = True,
     m30: Optional[pd.DataFrame] = None,
@@ -744,7 +840,13 @@ def evaluate_momentum(
             reward_r=r,
             session_filter=session_filter,
         )
-    r = reward_r if reward_r is not None else 1.25
-    return momentum_candle_v2(m5, m15, reward_r=r, session_filter=session_filter)
+    # momentum_v3_improved (and fallback for legacy momentum_v2)
+    r = reward_r if reward_r is not None else 2.0
+    return momentum_candle_v3_improved(
+        m5,
+        m30=m30,
+        reward_r=r,
+        session_filter=session_filter,
+    )
 
 

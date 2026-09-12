@@ -489,8 +489,8 @@ def format_stats_footer(stats: SignalStats) -> str:
     if tracker is not None:
         for ver, label in (
             ("momentum_v1", "Momentum Standar (v1)"),
-            ("momentum_v2", "Momentum Improved (v2)"),
             ("momentum_v3", "Momentum MTF 2-Candle (v3)"),
+            ("momentum_v3_improved", "Momentum MTF Pro (v3-Pro)"),
         ):
             ts = tracker.stats(strategy_version=ver)
             if ts.total == 0:

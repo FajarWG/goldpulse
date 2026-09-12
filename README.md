@@ -13,8 +13,8 @@ Sistem berfokus pada strategi momentum candle murni tanpa ketergantungan indikat
 | Versi | Tipe | Deskripsi & Filter Kunci | Reward:Risk |
 | :--- | :--- | :--- | :--- |
 | **`momentum_v1`** | Standar | Aksi harga candle M5, body-to-range ratio, alignment EMA 12/26, skor momentum $\ge 80$. | **1.0R** |
-| **`momentum_v2`** | Improved | Peningkatan dari v1 dengan **Session Filter** (London & NY killzones 07:00–17:00 UTC), **Exhaustion Cap** (`body_atr <= 2.2`), **Rejection Wick Filter** (`opposing_wick / range <= 0.30`), dan **Strict M15 Trend Confluence** (`m15_aligned`). | **1.25R** |
 | **`momentum_v3`** | Two Candles MTF | Multi-timeframe price action: **M30 Roadmap** (Pola 2 Candle: C1 impulsif + C2 lanjutan searah) + **M5 Entry Retracement** ke zona 50% equilibrium candle kedua M30, SL di High/Low M30. | **2.0R** |
+| **`momentum_v3_improved`** | Pro (Optimized) | MTF 2-Candle Pro berbasis temuan empiris backtest: **M30 Macro Trend Confluence** (EMA 50 M30), **Volatility Regime Gate** (filter `high_vol`), **NY Open Spike Filter** (skip 14:00 UTC), dan **Anti-Deep Retracement** (batal jika tembus C1). | **2.0R** |
 
 Ketiganya dapat dipilih dan diganti secara instan kapan saja langsung melalui Telegram tanpa perlu me-restart daemon service.
 
@@ -22,20 +22,20 @@ Ketiganya dapat dipilih dan diganti secara instan kapan saja langsung melalui Te
 
 ## 🚀 Fitur Utama
 
-1. **Sinyal Momentum Candle (M5 / M15):**
-   - Timing eksekusi candle M5 dengan konfirmasi struktur pasar M15.
+1. **Sinyal Momentum Candle (M5 / M15 / M30):**
+   - Timing eksekusi candle M5 dengan konfirmasi struktur pasar M15 / roadmap M30.
    - Deteksi pola candle, rasio body vs range, filter ekor perlawanan, dan capping volatilitas ekstrem.
    - Sinyal terformat rapi: Aksi (`BUY` / `SELL`), Skor, Entry, Batas Salah (SL), Target (TP), serta alasan teknikal.
 
 2. **Kontrol Interaktif Telegram (`/mode`):**
    - **Toggle On/Off:** Menyalakan atau mematikan pengiriman notifikasi sinyal secara live (`/mode on` atau `/mode off`).
-   - **Ganti Strategi:** Berpindah antara `momentum_v1`, `momentum_v2`, `momentum_v3`, atau mode `all` (semua aktif bersamaan) secara instan (`/mode v1`, `/mode v2`, `/mode v3`, atau `/mode all`).
+   - **Ganti Strategi:** Berpindah antara `momentum_v1`, `momentum_v3`, `momentum_v3_improved`, atau mode `all` (semua aktif bersamaan) secara instan (`/mode v1`, `/mode v3`, `/mode pro`, atau `/mode all`).
    - **Inline Keyboard:** Tombol interaktif langsung di Telegram untuk kemudahan kontrol pengguna.
    - Perubahan disimpan di SQLite (`telegram_state`) dan langsung diterapkan pada evaluasi 5-menitan berikutnya.
 
 3. **Forward Test Otomatis (Dynamic R):**
    - Setiap sinyal dicatat dan dievaluasi candle-by-candle secara real-time.
-   - Target TP tersentuh lebih dulu: Menang sesuai reward rasio sebenarnya (`+1.0R` atau `+1.25R`).
+   - Target TP tersentuh lebih dulu: Menang sesuai reward rasio sebenarnya (`+1.0R` atau `+2.0R`).
    - Stop Loss tersentuh lebih dulu: Kalah (`-1.0R`).
    - TP & SL tersentuh pada candle M5 yang sama: Dihitung kalah secara konservatif.
    - Statistik mencakup Win Rate, Total R, status aktif, dan rincian per versi (`/stats`).
@@ -43,7 +43,7 @@ Ketiganya dapat dipilih dan diganti secara instan kapan saja langsung melalui Te
 4. **Historical Backtest Engine Komparatif:**
    - Replay data historis 90 hari dengan incremental cache Twelve Data.
    - Perhitungan Monte Carlo randomisation p-value, profit factor, win rate, dan maximum drawdown.
-   - Perbandingan performa `momentum_v1` vs `momentum_v2` via CLI atau bot Telegram (`/backtest`).
+   - Perbandingan performa `momentum_v1`, `momentum_v3`, dan `momentum_v3_improved` via CLI atau bot Telegram (`/backtest`).
 
 5. **Analisis Pasar Multi-Timeframe (H1, H4, D1):**
    - Pemetaan tren besar berkala setiap jam.
@@ -88,8 +88,8 @@ TELEGRAM_CHAT_ID=your_chat_id
 
 # Mode & Strategi Awal
 SIGNAL_ENABLED=on
-SIGNAL_STRATEGY=momentum_v2
-SIGNAL_MOMENTUM_REWARD_R=1.25
+SIGNAL_STRATEGY=momentum_v3_improved
+SIGNAL_MOMENTUM_REWARD_R=2.0
 
 # AI Opsional
 GROQ_API_KEY=
@@ -103,13 +103,13 @@ DEEPSEEK_API_KEY=
 # 1. Analisis tren besar H1/H4/D1 ke terminal
 python main.py --symbols XAUUSD --timeframes H1,H4,D1 --stdout
 
-# 2. Evaluasi sinyal momentum M5/M15 satu kali (seperti systemd timer)
+# 2. Evaluasi sinyal momentum M5/M15/M30 satu kali (seperti systemd timer)
 python signal_main.py
 
 # 3. Jalankan bot Telegram interaktif (listener)
 python telegram_bot_main.py
 
-# 4. Replay backtest data historis (komparasi v1 & v2)
+# 4. Replay backtest data historis (komparasi v1, v3, dan v3_improved)
 python backtest_main.py --strategy all
 ```
 

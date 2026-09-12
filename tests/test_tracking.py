@@ -113,16 +113,16 @@ def test_active_signal_blocks_another(tmp_path):
 def test_strategy_versions_have_isolated_limits_and_statistics(tmp_path):
     path = tmp_path / "signals.db"
     v1_tracker = SignalTracker(path, strategy_version="momentum_v1")
-    v2_tracker = SignalTracker(path, strategy_version="momentum_v2")
     v3_tracker = SignalTracker(path, strategy_version="momentum_v3")
+    v3_pro_tracker = SignalTracker(path, strategy_version="momentum_v3_improved")
     candle = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
     v1_tracker.create_signal(_reading(strategy_version="momentum_v1"), candle, candle)
 
     assert v1_tracker.stats().total == 1
-    assert v2_tracker.stats().total == 0
     assert v3_tracker.stats().total == 0
-    assert v2_tracker.can_create(now=candle + timedelta(minutes=5)) is True
+    assert v3_pro_tracker.stats().total == 0
     assert v3_tracker.can_create(now=candle + timedelta(minutes=5)) is True
+    assert v3_pro_tracker.can_create(now=candle + timedelta(minutes=5)) is True
 
 
 def test_footer_is_appended_when_database_is_configured(tmp_path, monkeypatch):
@@ -152,9 +152,9 @@ def test_state_round_trip(tmp_path):
 
 
 def test_momentum_signal_created_and_tracked(tmp_path):
-    tracker = SignalTracker(tmp_path / "signals.db", strategy_version="momentum_v2")
+    tracker = SignalTracker(tmp_path / "signals.db", strategy_version="momentum_v3_improved")
     candle = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
-    reading = _reading(strategy_version="momentum_v2")
+    reading = _reading(strategy_version="momentum_v3_improved")
     assert tracker.can_create(now=candle, signal_type="momentum")
     assert tracker.create_signal(reading, candle, candle, signal_type="momentum") is not None
     assert tracker.stats_by_type("momentum").active == 1
@@ -166,8 +166,8 @@ def test_all_mode_evaluates_and_resolves_all_versions(tmp_path):
     tracker = SignalTracker(path, strategy_version="all")
     candle = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
     s1 = tracker.create_signal(_reading(strategy_version="momentum_v1"), candle, candle, strategy_version="momentum_v1")
-    s2 = tracker.create_signal(_reading(strategy_version="momentum_v2"), candle, candle, strategy_version="momentum_v2")
-    s3 = tracker.create_signal(_reading(strategy_version="momentum_v3"), candle, candle, strategy_version="momentum_v3")
+    s2 = tracker.create_signal(_reading(strategy_version="momentum_v3"), candle, candle, strategy_version="momentum_v3")
+    s3 = tracker.create_signal(_reading(strategy_version="momentum_v3_improved"), candle, candle, strategy_version="momentum_v3_improved")
     assert s1 and s2 and s3
 
     stats_all = tracker.stats()

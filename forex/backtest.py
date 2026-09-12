@@ -15,7 +15,12 @@ from .analysis import align_timeframes, analyse_timeframe
 from .instruments import parse_symbol
 from .product import CURRENT_STRATEGY_VERSION, DEFAULT_STRATEGY_VERSION
 from .providers import TwelveDataProvider, resample
-from .smc import evaluate_momentum, momentum_candle, momentum_candle_v2
+from .smc import (
+    evaluate_momentum,
+    momentum_candle,
+    momentum_candle_v3,
+    momentum_candle_v3_improved,
+)
 
 
 
@@ -203,7 +208,7 @@ def monte_carlo_pvalue(
 
 def run_momentum_backtest(
     frames: Dict[str, pd.DataFrame],
-    strategy_version: str = "momentum_v2",
+    strategy_version: str = "momentum_v3_improved",
     timeout_minutes: int = 240,
     max_per_day: int = 5,
     cooldown_minutes: int = 30,
@@ -211,8 +216,8 @@ def run_momentum_backtest(
     reward_r: Optional[float] = None,
     session_filter: bool = True,
 ) -> Tuple[BacktestSummary, List[BacktestTrade]]:
-    """Backtest momentum strategies (momentum_v1, momentum_v2, or momentum_v3)."""
-    default_rr = 1.0 if strategy_version == "momentum_v1" else (2.0 if strategy_version == "momentum_v3" else 1.25)
+    """Backtest momentum strategies (momentum_v1, momentum_v3, or momentum_v3_improved)."""
+    default_rr = 1.0 if strategy_version == "momentum_v1" else 2.0
     eff_rr = reward_r if reward_r is not None else default_rr
     m5 = frames["M5"].copy().sort_index()
     now = pd.Timestamp.now(tz="UTC")
@@ -244,7 +249,7 @@ def run_momentum_backtest(
         m15_window = m15.iloc[max(0, m15_end - 200) : m15_end]
         m30_end = int(m30.index.searchsorted(timestamp, side="right"))
         m30_window = m30.iloc[max(0, m30_end - 200) : m30_end]
-        if len(m15_window) < 20 or len(m5_window) < 35 or (strategy_version == "momentum_v3" and len(m30_window) < 5):
+        if len(m15_window) < 20 or len(m5_window) < 35 or (strategy_version in ("momentum_v3", "momentum_v3_improved") and len(m30_window) < 5):
             continue
         try:
             reading = evaluate_momentum(
