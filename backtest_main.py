@@ -28,7 +28,7 @@ def main() -> int:
     parser.add_argument("--notify", action="store_true", help="send the result to Telegram")
     parser.add_argument(
         "--strategy",
-        choices=("momentum_v1", "momentum_v2", "all"),
+        choices=("momentum_v1", "momentum_v2", "momentum_v3", "all"),
         default="all",
     )
     parser.add_argument("--lookback-days", type=int, default=None)
@@ -78,7 +78,7 @@ def main() -> int:
             cooldown_minutes=cooldown,
             max_active=max_active,
             reward_r=rr,
-            session_filter=(version == "momentum_v2"),
+            session_filter=(version in ("momentum_v2", "momentum_v3")),
         )
         label = args.output_label if len(target_versions) == 1 and args.output_label else version
         save_backtest(backtest_dir / label, summary, trades)
@@ -89,7 +89,12 @@ def main() -> int:
 
     sections = []
     for version in target_versions:
-        label = "🚀 Momentum Candle · momentum_v2 (Improved)" if version == "momentum_v2" else "⚡ Momentum Candle · momentum_v1 (Standar)"
+        if version == "momentum_v3":
+            label = "🎯 Momentum MTF · momentum_v3 (Two Candles)"
+        elif version == "momentum_v2":
+            label = "🚀 Momentum Candle · momentum_v2 (Improved)"
+        else:
+            label = "⚡ Momentum Candle · momentum_v1 (Standar)"
         sections.append(f"📋 {label}\n" + format_backtest(results[version], trades_map[version]))
 
     text = "\n\n".join(sections)

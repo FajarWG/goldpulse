@@ -11,7 +11,8 @@ def bot_name() -> str:
 
 DEFAULT_STRATEGY_VERSION = "momentum_v2"
 CURRENT_STRATEGY_VERSION = DEFAULT_STRATEGY_VERSION
-STRATEGY_VERSIONS = ("momentum_v1", "momentum_v2")
+STRATEGY_VERSIONS = ("momentum_v1", "momentum_v2", "momentum_v3")
+STRATEGY_MODES = ("momentum_v1", "momentum_v2", "momentum_v3", "all")
 
 
 BOT_DESCRIPTION = (

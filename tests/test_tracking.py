@@ -114,12 +114,15 @@ def test_strategy_versions_have_isolated_limits_and_statistics(tmp_path):
     path = tmp_path / "signals.db"
     v1_tracker = SignalTracker(path, strategy_version="momentum_v1")
     v2_tracker = SignalTracker(path, strategy_version="momentum_v2")
+    v3_tracker = SignalTracker(path, strategy_version="momentum_v3")
     candle = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
     v1_tracker.create_signal(_reading(strategy_version="momentum_v1"), candle, candle)
 
     assert v1_tracker.stats().total == 1
     assert v2_tracker.stats().total == 0
+    assert v3_tracker.stats().total == 0
     assert v2_tracker.can_create(now=candle + timedelta(minutes=5)) is True
+    assert v3_tracker.can_create(now=candle + timedelta(minutes=5)) is True
 
 
 def test_footer_is_appended_when_database_is_configured(tmp_path, monkeypatch):
@@ -156,3 +159,24 @@ def test_momentum_signal_created_and_tracked(tmp_path):
     assert tracker.create_signal(reading, candle, candle, signal_type="momentum") is not None
     assert tracker.stats_by_type("momentum").active == 1
     assert not tracker.can_create(now=candle, signal_type="momentum")
+
+
+def test_all_mode_evaluates_and_resolves_all_versions(tmp_path):
+    path = tmp_path / "signals.db"
+    tracker = SignalTracker(path, strategy_version="all")
+    candle = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
+    s1 = tracker.create_signal(_reading(strategy_version="momentum_v1"), candle, candle, strategy_version="momentum_v1")
+    s2 = tracker.create_signal(_reading(strategy_version="momentum_v2"), candle, candle, strategy_version="momentum_v2")
+    s3 = tracker.create_signal(_reading(strategy_version="momentum_v3"), candle, candle, strategy_version="momentum_v3")
+    assert s1 and s2 and s3
+
+    stats_all = tracker.stats()
+    assert stats_all.active == 3
+    assert stats_all.total == 3
+
+    resolved = tracker.evaluate(_frame(candle + timedelta(minutes=5), 102.5, 99.5), now=candle + timedelta(minutes=5))
+    assert resolved == 3
+    stats_resolved = tracker.stats()
+    assert stats_resolved.completed == 3
+    assert stats_resolved.wins == 3
+    assert stats_resolved.losses == 0

@@ -35,16 +35,22 @@ def stats_keyboard() -> Dict[str, Any]:
 
 def mode_keyboard(enabled: bool = True, strategy: str = "momentum_v2") -> Dict[str, Any]:
     toggle_text = "🔴 Matikan Sinyal" if enabled else "🟢 Aktifkan Sinyal"
+    all_check = " ✅" if strategy == "all" else ""
     v1_check = " ✅" if strategy == "momentum_v1" else ""
     v2_check = " ✅" if strategy == "momentum_v2" else ""
+    v3_check = " ✅" if strategy == "momentum_v3" else ""
     return {
         "inline_keyboard": [
             [
                 {"text": toggle_text, "callback_data": "mode:toggle"},
             ],
             [
-                {"text": f"⚡ Momentum v1{v1_check}", "callback_data": "strat:momentum_v1"},
-                {"text": f"🚀 Momentum v2{v2_check}", "callback_data": "strat:momentum_v2"},
+                {"text": f"🌟 Semua (v1+v2+v3){all_check}", "callback_data": "strat:all"},
+            ],
+            [
+                {"text": f"⚡ v1{v1_check}", "callback_data": "strat:momentum_v1"},
+                {"text": f"🚀 v2{v2_check}", "callback_data": "strat:momentum_v2"},
+                {"text": f"🎯 v3{v3_check}", "callback_data": "strat:momentum_v3"},
             ],
             [
                 {"text": "📊 Statistik", "callback_data": "stats"},

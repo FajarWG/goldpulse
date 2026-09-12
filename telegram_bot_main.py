@@ -72,7 +72,14 @@ def _mode_text(tracker: SignalTracker) -> str:
     db_enabled = tracker.get_state("signal_enabled")
     is_enabled = (db_enabled != "off") if db_enabled is not None else True
     db_strat = tracker.get_state("signal_strategy") or DEFAULT_STRATEGY_VERSION
-    strat_label = "🚀 Momentum Improved (v2)" if db_strat == "momentum_v2" else "⚡ Momentum Standar (v1)"
+    if db_strat == "all":
+        strat_label = "🌟 SEMUA AKTIF (v1 + v2 + v3)"
+    elif db_strat == "momentum_v3":
+        strat_label = "🎯 Momentum MTF (v3)"
+    elif db_strat == "momentum_v2":
+        strat_label = "🚀 Momentum Improved (v2)"
+    else:
+        strat_label = "⚡ Momentum Standar (v1)"
     status_label = "🟢 AKTIF (ON)" if is_enabled else "🔴 NONAKTIF (OFF)"
     return "\n".join([
         "⚙️ PENGATURAN STRATEGI",
@@ -81,8 +88,10 @@ def _mode_text(tracker: SignalTracker) -> str:
         f"Strategi Aktif: {strat_label}",
         "",
         "Pilihan Versi:",
+        "• all (Multi)  : Ketiga strategi aktif bersamaan secara paralel",
         "• v1 (Standar) : M5 candle action, EMA 12/26, 1.0R",
         "• v2 (Improved): London/NY killzone, anti-climax, wick filter, M15 trend, 1.25R",
+        "• v3 (Two Candles): M30 2-candle bias, M5 50% retracement entry, 2.0R",
         "━━━━━━━━━━━━━━━━━━━━",
         "Tekan tombol di bawah untuk mengubah pengaturan:",
     ])
@@ -140,9 +149,12 @@ def _backtest_text() -> str:
     root = state_dir / "backtest"
     v1_summary = load_latest_summary(root / "momentum_v1" / "latest.json")
     v2_summary = load_latest_summary(root / "momentum_v2" / "latest.json")
+    v3_summary = load_latest_summary(root / "momentum_v3" / "latest.json")
 
     period = "90 hari terakhir"
-    if v2_summary:
+    if v3_summary:
+        period = f"{v3_summary.period_start[:10]} → {v3_summary.period_end[:10]}"
+    elif v2_summary:
         period = f"{v2_summary.period_start[:10]} → {v2_summary.period_end[:10]}"
     elif v1_summary:
         period = f"{v1_summary.period_start[:10]} → {v1_summary.period_end[:10]}"
@@ -155,6 +167,8 @@ def _backtest_text() -> str:
         _format_backtest_card("⚡ Momentum Standar (v1)", v1_summary),
         "",
         _format_backtest_card("🚀 Momentum Improved (v2)", v2_summary),
+        "",
+        _format_backtest_card("🎯 Momentum MTF 2-Candle (v3)", v3_summary),
         "━━━━━━━━━━━━━━━━━━━━",
         "Hasil historis bukan jaminan performa berikutnya.",
     ]
@@ -249,6 +263,14 @@ def _send_command(parts: list[str], config: TelegramConfig, tracker: SignalTrack
                 tracker.set_state("signal_strategy", "momentum_v2")
                 send_telegram("🚀 Strategi aktif diubah ke: Momentum Improved (v2).", config)
                 _send_mode(config, tracker)
+            elif arg in ("v3", "momentum_v3"):
+                tracker.set_state("signal_strategy", "momentum_v3")
+                send_telegram("🎯 Strategi aktif diubah ke: Momentum MTF 2-Candle (v3).", config)
+                _send_mode(config, tracker)
+            elif arg in ("all", "multi", "semua"):
+                tracker.set_state("signal_strategy", "all")
+                send_telegram("🌟 Strategi aktif diubah ke: SEMUA AKTIF (v1 + v2 + v3).", config)
+                _send_mode(config, tracker)
             else:
                 _send_mode(config, tracker)
         else:
@@ -308,9 +330,16 @@ def handle_callback(
         return
     if data.startswith("strat:"):
         strat = data.split(":", 1)[1]
-        if strat in ("momentum_v1", "momentum_v2"):
+        if strat in ("momentum_v1", "momentum_v2", "momentum_v3", "all"):
             tracker.set_state("signal_strategy", strat)
-            label = "🚀 Momentum v2 (Improved)" if strat == "momentum_v2" else "⚡ Momentum v1 (Standar)"
+            if strat == "all":
+                label = "🌟 Semua Aktif (v1 + v2 + v3)"
+            elif strat == "momentum_v3":
+                label = "🎯 Momentum v3 (Two Candles)"
+            elif strat == "momentum_v2":
+                label = "🚀 Momentum v2 (Improved)"
+            else:
+                label = "⚡ Momentum v1 (Standar)"
             _answer(config, callback_id, f"Strategi: {label}")
             msg_id = message.get("message_id")
             if msg_id:

@@ -211,14 +211,15 @@ def run_momentum_backtest(
     reward_r: Optional[float] = None,
     session_filter: bool = True,
 ) -> Tuple[BacktestSummary, List[BacktestTrade]]:
-    """Backtest momentum strategies (momentum_v1 or momentum_v2)."""
-    default_rr = 1.0 if strategy_version == "momentum_v1" else 1.25
+    """Backtest momentum strategies (momentum_v1, momentum_v2, or momentum_v3)."""
+    default_rr = 1.0 if strategy_version == "momentum_v1" else (2.0 if strategy_version == "momentum_v3" else 1.25)
     eff_rr = reward_r if reward_r is not None else default_rr
     m5 = frames["M5"].copy().sort_index()
     now = pd.Timestamp.now(tz="UTC")
     if not m5.empty and m5.index[-1] + timedelta(minutes=5) > now:
         m5 = m5.iloc[:-1]
     m15 = resample(m5, "15min")
+    m30 = resample(m5, "30min")
     trades: List[BacktestTrade] = []
     daily_counts: Dict[str, int] = {}
     next_allowed: Optional[pd.Timestamp] = None
@@ -241,7 +242,9 @@ def run_momentum_backtest(
         m5_window = m5.iloc[: index + 1].tail(500)
         m15_end = int(m15.index.searchsorted(timestamp, side="right"))
         m15_window = m15.iloc[max(0, m15_end - 200) : m15_end]
-        if len(m15_window) < 20 or len(m5_window) < 35:
+        m30_end = int(m30.index.searchsorted(timestamp, side="right"))
+        m30_window = m30.iloc[max(0, m30_end - 200) : m30_end]
+        if len(m15_window) < 20 or len(m5_window) < 35 or (strategy_version == "momentum_v3" and len(m30_window) < 5):
             continue
         try:
             reading = evaluate_momentum(
@@ -250,6 +253,7 @@ def run_momentum_backtest(
                 strategy_version=strategy_version,
                 reward_r=eff_rr,
                 session_filter=session_filter,
+                m30=m30_window,
             )
         except ValueError:
             continue

@@ -251,21 +251,32 @@ class SignalTracker:
         frame: pd.DataFrame,
         timeout_minutes: int = 240,
         now: Optional[datetime] = None,
+        strategy_version: Optional[str] = None,
     ) -> int:
         """Resolve active signals. If TP and SL touch together, count a loss."""
         if frame.empty:
             return 0
         now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         resolved = 0
+        target_ver = strategy_version if strategy_version is not None else self.strategy_version
         with self._connect() as connection:
-            active = connection.execute(
-                """
-                SELECT * FROM paper_signals
-                WHERE status = 'active' AND strategy_version = ?
-                ORDER BY created_at_utc
-                """,
-                (self.strategy_version,),
-            ).fetchall()
+            if target_ver in ("all", None):
+                active = connection.execute(
+                    """
+                    SELECT * FROM paper_signals
+                    WHERE status = 'active'
+                    ORDER BY created_at_utc
+                    """
+                ).fetchall()
+            else:
+                active = connection.execute(
+                    """
+                    SELECT * FROM paper_signals
+                    WHERE status = 'active' AND strategy_version = ?
+                    ORDER BY created_at_utc
+                    """,
+                    (target_ver,),
+                ).fetchall()
             for signal in active:
                 after = signal["last_checked_candle_utc"] or signal["signal_candle_at_utc"]
                 after_dt = datetime.fromisoformat(after)
@@ -340,7 +351,8 @@ class SignalTracker:
         return resolved
 
     def stats(self, strategy_version: Optional[str] = None) -> SignalStats:
-        target = self.strategy_version if strategy_version is None else (None if strategy_version == "all" else strategy_version)
+        target = strategy_version if strategy_version is not None else self.strategy_version
+        target = None if target == "all" else target
         query_where = "WHERE strategy_version = ?" if target else ""
         params = (target,) if target else ()
         with self._connect() as connection:
@@ -478,6 +490,7 @@ def format_stats_footer(stats: SignalStats) -> str:
         for ver, label in (
             ("momentum_v1", "Momentum Standar (v1)"),
             ("momentum_v2", "Momentum Improved (v2)"),
+            ("momentum_v3", "Momentum MTF 2-Candle (v3)"),
         ):
             ts = tracker.stats(strategy_version=ver)
             if ts.total == 0:

@@ -9,6 +9,7 @@ from forex.smc import (
     market_structure,
     momentum_candle,
     momentum_candle_v2,
+    momentum_candle_v3,
 )
 
 
@@ -117,4 +118,101 @@ def test_momentum_telegram_text_formatting():
     assert "BUY" in text
     assert "Entry:" in text
     assert "SL:" in text and "TP:" in text
+
+
+def test_momentum_v3_bullish_and_bearish():
+    m30_idx = pd.date_range("2026-01-01 07:00:00", periods=10, freq="30min", tz="UTC")
+    m30_df = pd.DataFrame(
+        {
+            "open": [2000.0] * 8 + [2000.0, 2010.0],
+            "high": [2005.0] * 8 + [2010.0, 2020.0],
+            "low": [1995.0] * 8 + [1999.0, 2008.0],
+            "close": [2001.0] * 8 + [2010.0, 2019.0],
+        },
+        index=m30_idx,
+    )
+
+    m5_idx = pd.date_range("2026-01-01 08:30:00", periods=40, freq="5min", tz="UTC")
+    m5_df = pd.DataFrame(
+        {
+            "open": [2000.0] * 37 + [2018.0, 2014.0, 2013.0],
+            "high": [2002.0] * 37 + [2019.0, 2015.0, 2018.0],
+            "low": [1998.0] * 37 + [2013.0, 2012.0, 2012.5],
+            "close": [2001.0] * 37 + [2014.0, 2013.0, 2017.0],
+        },
+        index=m5_idx,
+    )
+    reading = momentum_candle_v3(m5_df, m30=m30_df, session_filter=True)
+    assert reading.action == "LONG"
+    assert reading.strategy_version == "momentum_v3"
+    assert reading.risk_reward == 2.0
+    assert reading.stop_loss < reading.entry < reading.take_profit
+    assert reading.stop_loss < 2008.0
+
+
+def test_momentum_v3_bearish():
+    m30_idx = pd.date_range("2026-01-01 07:00:00", periods=10, freq="30min", tz="UTC")
+    m30_df = pd.DataFrame(
+        {
+            "open": [2000.0] * 8 + [2020.0, 2010.0],
+            "high": [2005.0] * 8 + [2021.0, 2012.0],
+            "low": [1995.0] * 8 + [2010.0, 2000.0],
+            "close": [2001.0] * 8 + [2010.0, 2001.0],
+        },
+        index=m30_idx,
+    )
+
+    m5_idx = pd.date_range("2026-01-01 08:30:00", periods=40, freq="5min", tz="UTC")
+    m5_df = pd.DataFrame(
+        {
+            "open": [2000.0] * 37 + [2002.0, 2006.0, 2007.0],
+            "high": [2002.0] * 37 + [2007.5, 2008.0, 2008.0],
+            "low": [1998.0] * 37 + [2001.0, 2004.0, 2002.0],
+            "close": [2001.0] * 37 + [2006.5, 2007.0, 2003.0],
+        },
+        index=m5_idx,
+    )
+    reading = momentum_candle_v3(m5_df, m30=m30_df, session_filter=True)
+    assert reading.action == "SHORT"
+    assert reading.strategy_version == "momentum_v3"
+    assert reading.risk_reward == 2.0
+    assert reading.take_profit < reading.entry < reading.stop_loss
+    assert reading.stop_loss > 2012.0
+
+
+def test_momentum_v3_waiting_retracement():
+    m30_idx = pd.date_range("2026-01-01 07:00:00", periods=10, freq="30min", tz="UTC")
+    m30_df = pd.DataFrame(
+        {
+            "open": [2000.0] * 8 + [2000.0, 2010.0],
+            "high": [2005.0] * 8 + [2010.0, 2020.0],
+            "low": [1995.0] * 8 + [1999.0, 2008.0],
+            "close": [2001.0] * 8 + [2010.0, 2019.0],
+        },
+        index=m30_idx,
+    )
+    m5_idx = pd.date_range("2026-01-01 08:30:00", periods=40, freq="5min", tz="UTC")
+    m5_df = pd.DataFrame(
+        {
+            "open": [2000.0] * 37 + [2018.0, 2018.5, 2019.0],
+            "high": [2002.0] * 37 + [2021.0, 2022.0, 2023.0],
+            "low": [1998.0] * 37 + [2018.0, 2018.2, 2018.5],
+            "close": [2001.0] * 37 + [2019.0, 2020.0, 2021.0],
+        },
+        index=m5_idx,
+    )
+    reading = momentum_candle_v3(m5_df, m30=m30_df)
+    assert reading.action == "WAIT"
+    assert any("Waiting for M5 retracement" in c for c in reading.cautions)
+
+
+def test_evaluate_momentum_v3_and_formatting():
+    m5 = _trend_frame(direction=1, start="2026-01-01 00:00:00")
+    m15 = resample(m5, "15min")
+    r3 = evaluate_momentum(m5, m15, strategy_version="momentum_v3")
+    assert r3.strategy_version == "momentum_v3"
+    assert r3.risk_reward == 2.0
+
+    text = _momentum_text(r3)
+    assert "Momentum MTF 2-Candle (v3)" in text
 

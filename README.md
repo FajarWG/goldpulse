@@ -14,8 +14,9 @@ Sistem berfokus pada strategi momentum candle murni tanpa ketergantungan indikat
 | :--- | :--- | :--- | :--- |
 | **`momentum_v1`** | Standar | Aksi harga candle M5, body-to-range ratio, alignment EMA 12/26, skor momentum $\ge 80$. | **1.0R** |
 | **`momentum_v2`** | Improved | Peningkatan dari v1 dengan **Session Filter** (London & NY killzones 07:00–17:00 UTC), **Exhaustion Cap** (`body_atr <= 2.2`), **Rejection Wick Filter** (`opposing_wick / range <= 0.30`), dan **Strict M15 Trend Confluence** (`m15_aligned`). | **1.25R** |
+| **`momentum_v3`** | Two Candles MTF | Multi-timeframe price action: **M30 Roadmap** (Pola 2 Candle: C1 impulsif + C2 lanjutan searah) + **M5 Entry Retracement** ke zona 50% equilibrium candle kedua M30, SL di High/Low M30. | **2.0R** |
 
-Keduanya dapat dipilih dan diganti secara instan kapan saja langsung melalui Telegram tanpa perlu me-restart daemon service.
+Ketiganya dapat dipilih dan diganti secara instan kapan saja langsung melalui Telegram tanpa perlu me-restart daemon service.
 
 ---
 
@@ -28,7 +29,7 @@ Keduanya dapat dipilih dan diganti secara instan kapan saja langsung melalui Tel
 
 2. **Kontrol Interaktif Telegram (`/mode`):**
    - **Toggle On/Off:** Menyalakan atau mematikan pengiriman notifikasi sinyal secara live (`/mode on` atau `/mode off`).
-   - **Ganti Strategi:** Berpindah antara `momentum_v1` dan `momentum_v2` secara instan (`/mode v1` atau `/mode v2`).
+   - **Ganti Strategi:** Berpindah antara `momentum_v1`, `momentum_v2`, `momentum_v3`, atau mode `all` (semua aktif bersamaan) secara instan (`/mode v1`, `/mode v2`, `/mode v3`, atau `/mode all`).
    - **Inline Keyboard:** Tombol interaktif langsung di Telegram untuk kemudahan kontrol pengguna.
    - Perubahan disimpan di SQLite (`telegram_state`) dan langsung diterapkan pada evaluasi 5-menitan berikutnya.
 
@@ -120,7 +121,7 @@ python backtest_main.py --strategy all
 | :--- | :--- |
 | `/mode` | Menampilkan panel kontrol mode & status strategi aktif dengan tombol inline. |
 | `/mode on` / `/mode off` | Menyalakan atau menonaktifkan pengiriman sinyal momentum. |
-| `/mode v1` / `/mode v2` | Mengganti strategi aktif ke `momentum_v1` (Standar) atau `momentum_v2` (Improved). |
+| `/mode v1` / `/mode v2` / `/mode v3` / `/mode all` | Mengganti strategi aktif ke `v1`, `v2`, `v3`, atau `all` (semua strategi aktif bersamaan). |
 | `/stats` | Melihat statistik performa forward test real beserta breakdown per versi. |
 | `/backtest` | Melihat laporan ringkasan komparasi historical backtest terbaru. |
 | `/ai` | Meminta analisis kondisi teknikal pasar saat ini menggunakan AI. |

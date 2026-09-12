@@ -63,11 +63,12 @@ def _momentum_text(reading: MomentumReading, generated_at: Optional[datetime] = 
     else:
         action_str = "⏳ WAIT"
 
-    version_label = (
-        "🚀 Momentum Improved (v2)"
-        if reading.strategy_version == "momentum_v2"
-        else "⚡ Momentum Standar (v1)"
-    )
+    if reading.strategy_version == "momentum_v3":
+        version_label = "🎯 Momentum MTF 2-Candle (v3)"
+    elif reading.strategy_version == "momentum_v2":
+        version_label = "🚀 Momentum Improved (v2)"
+    else:
+        version_label = "⚡ Momentum Standar (v1)"
     lines = [
         f"🥇 {bot_name().upper()}",
         "━━━━━━━━━━━━━━━━━━━━",
@@ -118,6 +119,7 @@ def main() -> int:
     resolved = tracker.evaluate(
         m5,
         timeout_minutes=int(os.getenv("SIGNAL_TIMEOUT_MINUTES", "240")),
+        strategy_version="all",
     )
     stats_after_evaluation = tracker.stats()
 
@@ -135,52 +137,76 @@ def main() -> int:
         signal_enabled = os.getenv("SIGNAL_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 
     db_strategy = tracker.get_state("signal_strategy")
-    if db_strategy in ("momentum_v1", "momentum_v2"):
+    if db_strategy in ("momentum_v1", "momentum_v2", "momentum_v3", "all"):
         active_strategy = db_strategy
     else:
         active_strategy = os.getenv("SIGNAL_STRATEGY", "momentum_v2").strip()
 
-    default_rr = 1.0 if active_strategy == "momentum_v1" else 1.25
-    momentum_reward_r = float(os.getenv("SIGNAL_MOMENTUM_REWARD_R", str(default_rr)))
-
-    # --- Momentum candle signal ---
-    momentum_reading = evaluate_momentum(
-        m5,
-        m15,
-        strategy_version=active_strategy,
-        reward_r=momentum_reward_r,
+    # --- Momentum candle signals (single or all) ---
+    target_strategies = (
+        ("momentum_v1", "momentum_v2", "momentum_v3")
+        if active_strategy == "all"
+        else (active_strategy,)
     )
-    momentum_created = False
-    momentum_signal_id = None
-    momentum_notification = False
+    m30 = resample(m5, "30min")
+    strategy_events = []
 
-    if signal_enabled and momentum_reading.action in ("LONG", "SHORT") and tracker.can_create(
-        now=now,
-        max_per_day=max_momentum,
-        cooldown_minutes=cooldown,
-        signal_type="momentum",
-        max_active=max_active_momentum,
-        strategy_version=active_strategy,
-    ):
-        momentum_signal_id = tracker.create_signal(
-            momentum_reading,
-            m5.index[-1],
-            created_at=now,
+    for strat in target_strategies:
+        if strat == "momentum_v1":
+            default_rr = 1.0
+        elif strat == "momentum_v3":
+            default_rr = 2.0
+        else:
+            default_rr = 1.25
+        momentum_reward_r = float(os.getenv("SIGNAL_MOMENTUM_REWARD_R", str(default_rr)))
+        reading = evaluate_momentum(
+            m5,
+            m15,
+            strategy_version=strat,
+            reward_r=momentum_reward_r,
+            m30=m30,
+        )
+        sig_created = False
+        sig_id = None
+        sig_notif = False
+
+        if signal_enabled and reading.action in ("LONG", "SHORT") and tracker.can_create(
+            now=now,
+            max_per_day=max_momentum,
+            cooldown_minutes=cooldown,
             signal_type="momentum",
-            strategy_version=active_strategy,
-        )
-        momentum_created = momentum_signal_id is not None
+            max_active=max_active_momentum,
+            strategy_version=strat,
+        ):
+            sig_id = tracker.create_signal(
+                reading,
+                m5.index[-1],
+                created_at=now,
+                signal_type="momentum",
+                strategy_version=strat,
+            )
+            sig_created = sig_id is not None
 
-    if momentum_created and config.telegram.enabled:
-        momentum_notification = send_telegram(
-            _momentum_text(momentum_reading, now),
-            config.telegram,
-            reply_markup=signal_keyboard(),
-        )
+        if sig_created and config.telegram.enabled:
+            sig_notif = send_telegram(
+                _momentum_text(reading, now),
+                config.telegram,
+                reply_markup=signal_keyboard(),
+            )
+
+        strategy_events.append({
+            "strategy_version": strat,
+            "reading": reading.to_dict(),
+            "signal_id": sig_id,
+            "created": sig_created,
+            "notification_sent": sig_notif,
+        })
+
+    any_signal_created = any(item["created"] for item in strategy_events)
 
     # --- Result notification ---
     result_notification_sent = False
-    if resolved and not momentum_created and config.telegram.enabled:
+    if resolved and not any_signal_created and config.telegram.enabled:
         changes = []
         won = stats_after_evaluation.wins - stats_before.wins
         lost = stats_after_evaluation.losses - stats_before.losses
@@ -203,15 +229,17 @@ def main() -> int:
         )
 
     # --- Event log ---
+    first_ev = strategy_events[0] if strategy_events else {}
     event = {
         "generated_at": now.isoformat(timespec="seconds"),
         "signal_enabled": signal_enabled,
         "active_strategy": active_strategy,
+        "strategies": strategy_events,
         "momentum_candle": {
-            **momentum_reading.to_dict(),
-            "signal_id": momentum_signal_id,
-            "created": momentum_created,
-            "notification_sent": momentum_notification,
+            **(first_ev.get("reading") or {}),
+            "signal_id": first_ev.get("signal_id"),
+            "created": first_ev.get("created", False),
+            "notification_sent": first_ev.get("notification_sent", False),
         },
         "resolved_previous_signals": resolved,
         "tracking_stats": tracker.stats().__dict__,

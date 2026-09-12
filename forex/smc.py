@@ -1,10 +1,12 @@
-"""Momentum candle analysis engine for XAUUSD (M5 / M15).
+"""Momentum candle analysis engine for XAUUSD (M5 / M15 / M30).
 
-Supports two versions:
+Supports three versions:
   - momentum_v1: Baseline candle-action momentum strategy.
   - momentum_v2: Improved momentum with session filter (London/NY killzones),
                  exhaustion/climax cap, rejection wick filter, strict M15 trend
                  alignment, and adaptive risk-to-reward ratio.
+  - momentum_v3: Multi-timeframe 2-candle momentum strategy (M30 roadmap + M5
+                 50% retracement entry) with 1:2 risk-to-reward ratio.
 
 No broker, account, position sizing, or order execution code belongs here.
 """
@@ -485,17 +487,264 @@ def momentum_candle_v2(
     )
 
 
+def momentum_candle_v3(
+    m5: pd.DataFrame,
+    m30: Optional[pd.DataFrame] = None,
+    score_threshold: int = 75,
+    reward_r: float = 2.0,
+    session_filter: bool = True,
+    retrace_min_pct: float = 0.50,
+    max_opposing_wick_ratio: float = 0.35,
+    min_c1_body_ratio: float = 0.45,
+) -> MomentumReading:
+    """Multi-timeframe 2-candle momentum strategy (momentum_v3).
+
+    Based on the MTF 2-Candle Price Action method:
+      1. HTF Roadmap (M30):
+         - Identifies the last 2 closed M30 candles.
+         - Candle 1: Impulsive candle with strong directional body.
+         - Candle 2: Continuation candle in the same direction, with low opposing wick (<35%).
+         - Sets HTF bias (LONG or SHORT) and defines the equilibrium (50% pivot) of Candle 2.
+      2. LTF Execution (M5):
+         - Waits for M5 price to retrace into the discount (for LONG) or premium (for SHORT)
+           area of the M30 setup candle (at or beyond 50% equilibrium).
+         - Triggers entry on M5 reversal confirmation candle.
+      3. Risk Management:
+         - Stop Loss placed outside the M30 setup candle range (with ATR buffer).
+         - Take Profit with 1:2 risk-to-reward ratio (default 2.0R).
+      4. Session Filter:
+         - Focus on London & New York high-liquidity sessions (07:00-17:00 UTC).
+    """
+    if len(m5) < 35:
+        raise ValueError("insufficient candles for momentum candle evaluation")
+
+    m5 = m5.copy().dropna(subset=["open", "high", "low", "close"])
+    if m30 is None:
+        from .providers import resample
+        m30 = resample(m5, "30min")
+    else:
+        m30 = m30.copy().dropna(subset=["open", "high", "low", "close"])
+
+    if len(m30) < 5:
+        raise ValueError("insufficient candles for momentum candle evaluation")
+
+    c1 = m30.iloc[-2]
+    c2 = m30.iloc[-1]
+    c2_timestamp = m30.index[-1]
+
+    c1_open = float(c1["open"])
+    c1_close = float(c1["close"])
+    c1_high = float(c1["high"])
+    c1_low = float(c1["low"])
+    c1_range = c1_high - c1_low
+    c1_body = abs(c1_close - c1_open)
+    c1_body_ratio = (c1_body / c1_range) if c1_range > 0 else 0.0
+
+    c2_open = float(c2["open"])
+    c2_close = float(c2["close"])
+    c2_high = float(c2["high"])
+    c2_low = float(c2["low"])
+    c2_range = c2_high - c2_low
+    c2_body = abs(c2_close - c2_open)
+    c2_body_ratio = (c2_body / c2_range) if c2_range > 0 else 0.0
+
+    atr30 = _atr(m30)
+    atr5 = _atr(m5)
+    rsi5 = _rsi(m5)
+    regime = volatility_regime(m5["close"])
+
+    c1_is_bullish = c1_close > c1_open
+    c1_is_bearish = c1_close < c1_open
+    c1_impulsive = (c1_body_ratio >= min_c1_body_ratio) and (c1_body >= 0.35 * atr30 if atr30 > 0 else True)
+
+    c2_is_bullish = c2_close > c2_open
+    c2_is_bearish = c2_close < c2_open
+
+    upper_wick_c2 = c2_high - max(c2_open, c2_close)
+    lower_wick_c2 = min(c2_open, c2_close) - c2_low
+    opposing_wick_c2 = upper_wick_c2 if c2_is_bullish else lower_wick_c2
+    opposing_wick_ratio = (opposing_wick_c2 / c2_range) if c2_range > 0 else 0.0
+    c2_no_rejection = opposing_wick_ratio <= max_opposing_wick_ratio
+
+    bullish_setup = (
+        c1_is_bullish
+        and c1_impulsive
+        and c2_is_bullish
+        and c2_no_rejection
+        and (c2_close >= c1_close or c2_high >= c1_high)
+    )
+    bearish_setup = (
+        c1_is_bearish
+        and c1_impulsive
+        and c2_is_bearish
+        and c2_no_rejection
+        and (c2_close <= c1_close or c2_low <= c1_low)
+    )
+
+    htf_bias = "LONG" if bullish_setup else ("SHORT" if bearish_setup else None)
+
+    # Session check
+    last_m5 = m5.iloc[-1]
+    last_timestamp = m5.index[-1]
+    if isinstance(last_timestamp, pd.Timestamp):
+        utc_time = last_timestamp.tz_convert("UTC") if last_timestamp.tzinfo else last_timestamp.tz_localize("UTC")
+        in_session = (7 <= utc_time.hour <= 17) and (utc_time.dayofweek < 5)
+    else:
+        in_session = True
+
+    # 50% Equilibrium level of C2
+    c2_mid = (c2_high + c2_low) / 2.0
+
+    # Determine M5 bars of the current developing M30 candle
+    if isinstance(m5.index, pd.DatetimeIndex) and isinstance(c2_timestamp, pd.Timestamp):
+        curr_m5_bars = m5.loc[m5.index > c2_timestamp]
+    else:
+        curr_m5_bars = m5.tail(6)
+
+    if curr_m5_bars.empty:
+        curr_m5_bars = m5.tail(1)
+
+    m5_close = float(last_m5["close"])
+    m5_open = float(last_m5["open"])
+    m5_high = float(last_m5["high"])
+    m5_low = float(last_m5["low"])
+    m5_range = m5_high - m5_low
+    m5_body = abs(m5_close - m5_open)
+    m5_body_ratio = (m5_body / m5_range) if m5_range > 0 else 0.0
+
+    retrace_happened = False
+    m5_confirmed = False
+    if htf_bias == "LONG":
+        retrace_happened = float(curr_m5_bars["low"].min()) <= c2_mid
+        m5_confirmed = m5_close > m5_open
+    elif htf_bias == "SHORT":
+        retrace_happened = float(curr_m5_bars["high"].max()) >= c2_mid
+        m5_confirmed = m5_close < m5_open
+
+    ema_fast = float(m5["close"].ewm(span=12, adjust=False).mean().iloc[-1])
+    ema_slow = float(m5["close"].ewm(span=26, adjust=False).mean().iloc[-1])
+    ema_aligned = (ema_fast > ema_slow) if (htf_bias == "LONG") else ((ema_fast < ema_slow) if (htf_bias == "SHORT") else False)
+
+    vol_df = m5 if "volume" in m5.columns else pd.DataFrame()
+    volume_aligned = False
+    if not vol_df.empty and vol_df["volume"].astype(float).nunique() > 1:
+        from .analysis import obv as obv_fn
+        obv_series = obv_fn(vol_df)
+        if len(obv_series.dropna()) >= 25:
+            slope = float(obv_series.iloc[-1]) - float(obv_series.iloc[-25])
+            volume_aligned = (slope > 0) if (htf_bias == "LONG") else (slope < 0)
+
+    score = 0
+    reasons: List[str] = []
+    cautions: List[str] = []
+
+    if in_session:
+        reasons.append(f"High-liquidity session ({utc_time.hour:02d}:00 UTC)" if isinstance(last_timestamp, pd.Timestamp) else "In session")
+        score += 15
+    elif session_filter:
+        cautions.append("Outside London/NY session (07:00-17:00 UTC)")
+
+    if htf_bias is not None:
+        score += 35
+        reasons.append(f"M30 2-candle {htf_bias.lower()} roadmap confirmed (C1 body {c1_body_ratio:.0%})")
+    else:
+        cautions.append("M30 2-candle roadmap setup not met")
+
+    if retrace_happened:
+        score += 25
+        reasons.append(f"M5 retraced to 50% equilibrium ({c2_mid:.2f})")
+    else:
+        cautions.append("Waiting for M5 retracement to 50% equilibrium")
+
+    if m5_confirmed:
+        score += 15
+        reasons.append(f"M5 candle confirms {htf_bias.lower()} continuation")
+    else:
+        cautions.append("M5 candle does not confirm continuation")
+
+    if ema_aligned:
+        score += 10
+        reasons.append("M5 EMA aligns with M30 roadmap")
+
+    if regime == "high_vol":
+        cautions.append("High-volatility regime")
+
+    gates_passed = (
+        (htf_bias in ("LONG", "SHORT"))
+        and retrace_happened
+        and m5_confirmed
+        and (in_session or not session_filter)
+        and score >= score_threshold
+    )
+
+    action = htf_bias if gates_passed else "WAIT"
+
+    price = m5_close
+    entry = stop = target = None
+    risk_reward = reward_r
+
+    if action == "LONG":
+        entry = price
+        stop = c2_low - atr5 * 0.2
+        risk = entry - stop
+        if risk > 0:
+            target = entry + risk * reward_r
+        else:
+            action = "WAIT"
+            cautions.append("Stop loss is above entry price")
+    elif action == "SHORT":
+        entry = price
+        stop = c2_high + atr5 * 0.2
+        risk = stop - entry
+        if risk > 0:
+            target = entry - risk * reward_r
+        else:
+            action = "WAIT"
+            cautions.append("Stop loss is below entry price")
+
+    return MomentumReading(
+        action=action,
+        score=min(score, 100),
+        price=price,
+        entry=entry,
+        stop_loss=stop,
+        take_profit=target,
+        risk_reward=risk_reward,
+        rsi=rsi5,
+        atr=atr5,
+        candle_pattern=candle_pattern(m5),
+        m5_body_ratio=round(m5_body_ratio, 3),
+        ema_aligned=ema_aligned,
+        m15_aligned=(htf_bias is not None),
+        volume_aligned=volume_aligned,
+        regime=regime,
+        reasons=reasons,
+        cautions=cautions,
+        strategy_version="momentum_v3",
+    )
+
+
 def evaluate_momentum(
     m5: pd.DataFrame,
     m15: pd.DataFrame,
     strategy_version: str = "momentum_v2",
     reward_r: Optional[float] = None,
     session_filter: bool = True,
+    m30: Optional[pd.DataFrame] = None,
 ) -> MomentumReading:
     """Evaluate momentum with the specified version."""
     if strategy_version == "momentum_v1":
         r = reward_r if reward_r is not None else 1.0
         return momentum_candle(m5, m15, reward_r=r)
+    if strategy_version == "momentum_v3":
+        r = reward_r if reward_r is not None else 2.0
+        return momentum_candle_v3(
+            m5,
+            m30=m30,
+            reward_r=r,
+            session_filter=session_filter,
+        )
     r = reward_r if reward_r is not None else 1.25
     return momentum_candle_v2(m5, m15, reward_r=r, session_filter=session_filter)
+
 
